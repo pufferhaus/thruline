@@ -274,16 +274,15 @@ pub async fn cmd_resume(
 
     let outputs: Vec<(String, String, bool)> = artifact_args
         .iter()
-        .map(|arg| {
+        .map(|arg| -> anyhow::Result<(String, String, bool)> {
             let (k, v) = arg
                 .split_once('=')
-                .ok_or_else(|| anyhow::anyhow!("artifact arg must be key=value, got '{}'", arg))
-                .unwrap();
+                .ok_or_else(|| anyhow::anyhow!("artifact arg must be key=value, got '{}'", arg))?;
             let is_file = v.starts_with("file://");
             let val = if is_file { v[7..].to_string() } else { v.to_string() };
-            (k.to_string(), val, is_file)
+            Ok((k.to_string(), val, is_file))
         })
-        .collect();
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     runtime.resume_stage(stage_name, outputs)?;
 
