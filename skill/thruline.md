@@ -1,23 +1,23 @@
 ---
 name: thruline
-description: Run a .tl pipeline using the thruline binary as orchestrator. Drives agent invocations through this Claude Code harness and renders live pipeline status. Use when asked to run a thruline pipeline or .tl file.
+description: Run a .line pipeline using the thruline binary as orchestrator. Drives agent invocations through this Claude Code harness and renders live pipeline status. Use when asked to run a thruline pipeline or .line file.
 ---
 
 # Thruline Skill
 
-Runs a `.tl` pipeline file using the `thruline` binary as the orchestrator.
+Runs a `.line` pipeline file using the `thruline` binary as the orchestrator.
 This skill bridges the binary's stdio event protocol with Claude Code's Agent tool.
 
 ## Usage
 
-Invoke with a path to a `.tl` file:
+Invoke with a path to a `.line` file:
 ```
-/thruline path/to/pipeline.tl [--pipeline <name>]
+/thruline path/to/pipeline.line [--pipeline <name>]
 ```
 
 ## How It Works
 
-1. Run `thruline run <file.tl> --driver stdio` as a subprocess
+1. Run `thruline run <file.line> --driver stdio` as a subprocess
 2. Read NDJSON events from stdout line by line
 3. On `stage_invoke` event — spawn the stage's agent using this harness's Agent tool, passing the runner spec and input artifacts
 4. Call `thruline resume <run-id> --stage <name> --artifact key=value [...]` with the agent's output

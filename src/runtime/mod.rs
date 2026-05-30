@@ -146,7 +146,7 @@ impl Runtime {
             .get(&stage.agent)
             .ok_or_else(|| anyhow::anyhow!("runner '{}' not found", stage.agent))?;
 
-        let tl_path = self.state.tl_file.clone();
+        let tl_path = self.state.line_file.clone();
         let runner_spec = self.resolve_runner(runner_decl, &tl_path)?;
         let input_artifacts = self.stage_input_artifacts(stage, &self.state.artifacts);
 
@@ -284,7 +284,7 @@ mod tests {
     }
 
     fn mk_runtime() -> Runtime {
-        let state = RunState::new("r1".into(), "p".into(), "/tmp/test.tl".into());
+        let state = RunState::new("r1".into(), "p".into(), "/tmp/test.line".into());
         let items = vec![
             mk_runner("runner"),
             mk_stage("a", "runner", &[("verdict", ArtifactKind::Ref)]),
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_unconditional_route() {
-        let state = RunState::new("r".into(), "p2".into(), "/tmp/t.tl".into());
+        let state = RunState::new("r".into(), "p2".into(), "/tmp/t.line".into());
         let items = vec![
             mk_runner("r"),
             mk_stage("x", "r", &[]),
@@ -387,7 +387,7 @@ mod tests {
         let rt = mk_runtime();
         let runners = rt.runners();
         let runner_decl = runners.get("runner").unwrap();
-        let spec = rt.resolve_runner(runner_decl, Path::new("/tmp/test.tl")).unwrap();
+        let spec = rt.resolve_runner(runner_decl, Path::new("/tmp/test.line")).unwrap();
         assert_eq!(spec.model, "claude-sonnet-4-6");
         assert_eq!(spec.system, "system prompt");
     }

@@ -15,7 +15,7 @@ pub fn parse_file(path: &Path) -> anyhow::Result<Vec<TlItem>> {
 }
 
 pub fn parse_str(src: &str) -> anyhow::Result<Vec<TlItem>> {
-    let file = TlParser::parse(Rule::tl_file, src)
+    let file = TlParser::parse(Rule::line_file, src)
         .map_err(|e| anyhow::anyhow!("parse error: {}", e))?
         .next()
         .unwrap();
@@ -237,9 +237,9 @@ mod tests {
 
     #[test]
     fn test_parse_import() {
-        let items = parse_str(r#"import "stages/workers.tl""#).unwrap();
+        let items = parse_str(r#"import "stages/workers.line""#).unwrap();
         assert_eq!(items.len(), 1);
-        assert!(matches!(&items[0], TlItem::Import(p) if p == "stages/workers.tl"));
+        assert!(matches!(&items[0], TlItem::Import(p) if p == "stages/workers.line"));
     }
 
     #[test]
@@ -363,7 +363,7 @@ runner r {
     #[test]
     fn test_parse_multiple_items() {
         let src = r#"
-import "other.tl"
+import "other.line"
 runner r { model: claude-sonnet-4-6 system: "s" }
 stage a { agent: r }
 pipeline p { start: a routes {} }

@@ -61,5 +61,5 @@ pipeline_decl = { "pipeline" ~ identifier ~ "{" ~ pipe_start ~ routes_block ~ "}
 import_decl  = { "import" ~ quoted_str }
 
 // ── Top-level ─────────────────────────────────────────────────────────────
-tl_item = _{ import_decl | runner_decl | stage_decl | pipeline_decl }
-tl_file =  { SOI ~ tl_item* ~ EOI }
+line_item = _{ import_decl | runner_decl | stage_decl | pipeline_decl }
+line_file =  { SOI ~ line_item* ~ EOI }

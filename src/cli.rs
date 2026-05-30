@@ -15,7 +15,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Parse and statically validate a .tl file
+    /// Parse and statically validate a .line file
     Validate { file: PathBuf },
     /// Print the pipeline graph as an ASCII representation
     Inspect { file: PathBuf },
@@ -56,7 +56,7 @@ pub async fn run() -> anyhow::Result<()> {
 
 // ── Import resolution ─────────────────────────────────────────────────────
 
-/// Load a .tl file and all its imports recursively, deduplicating by canonical path.
+/// Load a .line file and all its imports recursively, deduplicating by canonical path.
 /// Import items are consumed (not kept in output); all other items are returned flat.
 pub fn load_items(entry: &Path) -> anyhow::Result<Vec<TlItem>> {
     let mut items = Vec::new();
@@ -185,7 +185,7 @@ fn cmd_status(run_id: &str) -> anyhow::Result<()> {
     let state = RunState::load(run_id)?;
     println!("run:      {}", state.run_id);
     println!("pipeline: {}", state.pipeline);
-    println!("file:     {}", state.tl_file.display());
+    println!("file:     {}", state.line_file.display());
     println!("status:   {:?}", state.status);
     println!("history:  {}", state.history.join(" \u{2192} "));
     println!("updated:  {}", state.updated);
@@ -268,7 +268,7 @@ pub async fn cmd_resume(
     use crate::runtime::{state::RunState, Runtime};
 
     let state = RunState::load(run_id)?;
-    let file  = state.tl_file.clone();
+    let file  = state.line_file.clone();
     let items = load_items(&file)?;
     let mut runtime = Runtime::new(state, items);
 

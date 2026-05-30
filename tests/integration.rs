@@ -35,7 +35,7 @@ pipeline p {
 #[test]
 fn test_validate_valid_file() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline().args(["validate", tl.to_str().unwrap()]).output().unwrap();
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
@@ -45,7 +45,7 @@ fn test_validate_valid_file() {
 #[test]
 fn test_validate_unknown_runner_fails() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "bad.tl", r#"
+    let tl = write_tl(dir.path(), "bad.line", r#"
 stage a {
   agent: ghost
 }
@@ -63,14 +63,14 @@ pipeline p {
 
 #[test]
 fn test_validate_missing_file_errors() {
-    let out = thruline().args(["validate", "/nonexistent/path.tl"]).output().unwrap();
+    let out = thruline().args(["validate", "/nonexistent/path.line"]).output().unwrap();
     assert!(!out.status.success());
 }
 
 #[test]
 fn test_inspect_shows_pipeline() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline().args(["inspect", tl.to_str().unwrap()]).output().unwrap();
     assert!(out.status.success());
@@ -84,7 +84,7 @@ fn test_inspect_shows_pipeline() {
 #[test]
 fn test_inspect_shows_stages() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline().args(["inspect", tl.to_str().unwrap()]).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -95,7 +95,7 @@ fn test_inspect_shows_stages() {
 #[test]
 fn test_run_stdio_emits_pipeline_start_and_stage_invoke() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline()
         .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
@@ -114,7 +114,7 @@ fn test_run_stdio_emits_pipeline_start_and_stage_invoke() {
 #[test]
 fn test_run_creates_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline()
         .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
@@ -140,7 +140,7 @@ fn test_run_creates_state_file() {
 #[test]
 fn test_runs_command_shows_created_run() {
     let dir = tempfile::tempdir().unwrap();
-    let tl = write_tl(dir.path(), "test.tl", BASIC_TL);
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     // Create a run
     let run_out = thruline()
@@ -169,16 +169,16 @@ fn test_validate_with_import() {
     let dir = tempfile::tempdir().unwrap();
 
     // Write runners to a separate file
-    write_tl(dir.path(), "runners.tl", r#"
+    write_tl(dir.path(), "runners.line", r#"
 runner r {
   model: claude-sonnet-4-6
   system: "runner"
 }
 "#);
 
-    // Main file imports runners.tl
-    let tl = write_tl(dir.path(), "main.tl", r#"
-import "runners.tl"
+    // Main file imports runners.line
+    let tl = write_tl(dir.path(), "main.line", r#"
+import "runners.line"
 stage a { agent: r }
 pipeline p {
   start: a

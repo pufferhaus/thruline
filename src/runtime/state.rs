@@ -16,7 +16,7 @@ pub enum RunStatus {
 pub struct RunState {
     pub run_id:    String,
     pub pipeline:  String,
-    pub tl_file:   PathBuf,
+    pub line_file:   PathBuf,
     pub status:    RunStatus,
     pub artifacts: ArtifactStore,
     pub history:   Vec<String>,
@@ -25,12 +25,12 @@ pub struct RunState {
 }
 
 impl RunState {
-    pub fn new(run_id: String, pipeline: String, tl_file: PathBuf) -> Self {
+    pub fn new(run_id: String, pipeline: String, line_file: PathBuf) -> Self {
         let now = Utc::now();
         Self {
             run_id,
             pipeline,
-            tl_file,
+            line_file,
             status: RunStatus::Running,
             artifacts: ArtifactStore::new(),
             history: Vec::new(),
@@ -110,7 +110,7 @@ mod tests {
         let state = RunState::new(
             "test-run-123".to_string(),
             "feature-dev".to_string(),
-            "/tmp/test.tl".into(),
+            "/tmp/test.line".into(),
         );
         assert_eq!(state.run_id, "test-run-123");
         assert_eq!(state.pipeline, "feature-dev");
@@ -123,7 +123,7 @@ mod tests {
         let state = RunState::new(
             "r1".to_string(),
             "p1".to_string(),
-            "/tmp/test.tl".into(),
+            "/tmp/test.line".into(),
         );
         let json = serde_json::to_string(&state).unwrap();
         let back: RunState = serde_json::from_str(&json).unwrap();
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_awaiting_resume_status_roundtrip() {
-        let mut state = RunState::new("r".to_string(), "p".to_string(), "/t.tl".into());
+        let mut state = RunState::new("r".to_string(), "p".to_string(), "/t.line".into());
         state.status = RunStatus::AwaitingResume { stage: "interview".to_string() };
         let json = serde_json::to_string(&state).unwrap();
         let back: RunState = serde_json::from_str(&json).unwrap();
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_run_dir_path() {
-        let state = RunState::new("abc123".to_string(), "p".to_string(), "/t.tl".into());
+        let state = RunState::new("abc123".to_string(), "p".to_string(), "/t.line".into());
         let dir = state.run_dir();
         assert!(dir.to_string_lossy().contains("abc123"));
         assert!(dir.to_string_lossy().contains(".thruline"));
