@@ -375,4 +375,21 @@ pipeline p { start: a routes {} }
         assert!(matches!(&items[2], TlItem::Stage(_)));
         assert!(matches!(&items[3], TlItem::Pipeline(_)));
     }
+
+    #[test]
+    fn test_parse_route_ne_predicate() {
+        let src = r#"
+pipeline p {
+  start: a
+  routes {
+    a.verdict != "rejected" -> b
+  }
+}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Pipeline(p) = &items[0] else { panic!() };
+        assert!(matches!(&p.routes[0].source,
+            RouteSource::Predicate { op, value, .. }
+            if *op == CompareOp::Ne && value == "rejected"));
+    }
 }
