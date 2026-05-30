@@ -112,13 +112,18 @@ impl Runtime {
     ///
     /// Resolution order for each declared input:
     ///
-    /// If `source` is explicit (e.g. `classify.language as value`):
-    ///   - Look up `classify.language` directly. No fallback.
+    /// If `source` is explicit (e.g. `classify.language as value` or `input.code as value`):
+    ///   - Look up that exact key directly. No fallback.
+    ///   - `input.x` resolves to the pipeline input namespace (seeded via --input).
     ///
-    /// If unqualified (e.g. `language as value`):
+    /// If unqualified (e.g. `code as value`):
     ///   1. `stage.artifact`   — the stage's own prior output (e.g. retry wrote it)
-    ///   2. `input.artifact`   — pipeline-level input supplied via --input
-    ///   3. `<prior>.artifact` — scan completed stages newest-first; first match wins
+    ///   2. `<prior>.artifact` — scan completed stages newest-first; first match wins
+    ///   3. `input.artifact`   — pipeline input (true default: used only if no stage produced it)
+    ///
+    /// Pipeline inputs are seeds, not overrides. A stage that revises `code` and writes
+    /// `revise.code` will have that version propagate forward, shadowing the original
+    /// pipeline input for subsequent stages that declare `in: code`.
     fn stage_input_artifacts(
         &self,
         stage: &StageDecl,
@@ -127,7 +132,7 @@ impl Runtime {
         let mut map = serde_json::Map::new();
         for input in &stage.inputs {
             let value = if let Some(src) = &input.source {
-                // Explicit source: look up stage.artifact directly
+                // Explicit source: look up key directly (works for both stage names and "input")
                 let key = format!("{}.{}", src, input.name);
                 if let Some(path) = artifacts.get_file(&key) {
                     Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
@@ -142,12 +147,8 @@ impl Runtime {
                     Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
                 } else if let Some(val) = artifacts.get_ref(&stage_key) {
                     Some(serde_json::Value::String(val.to_string()))
-                } else if let Some(path) = artifacts.get_file(&input_key) {
-                    Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
-                } else if let Some(val) = artifacts.get_ref(&input_key) {
-                    Some(serde_json::Value::String(val.to_string()))
                 } else {
-                    // Scan history newest-first for any prior stage that produced this name
+                    // Scan history newest-first — history beats pipeline inputs
                     let mut found = None;
                     for prior in self.state.history.iter().rev() {
                         let key = format!("{}.{}", prior, input.name);
@@ -159,7 +160,14 @@ impl Runtime {
                             break;
                         }
                     }
-                    found
+                    // Pipeline input is the last resort default
+                    found.or_else(|| {
+                        if let Some(path) = artifacts.get_file(&input_key) {
+                            Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+                        } else {
+                            artifacts.get_ref(&input_key).map(|v| serde_json::Value::String(v.to_string()))
+                        }
+                    })
                 }
             };
 
@@ -342,19 +350,13 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
-            // TODO: if route.parallel is true, use Scheduler for fan-out/fan-in
-            // instead of single AwaitingResume. ParallelStart/ParallelSlotOpen/
-            // ParallelDone events and RunStatus::ParallelAwait are defined but
-            // not yet wired here.
             if route.target.parallel_spec.is_some() {
-                let limit_str = route.target.parallel_spec.as_ref()
-                    .and_then(|s| s.limit)
-                    .map(|l| l.to_string())
-                    .unwrap_or_default();
-                eprintln!(
-                    "warning: run {}: route {} -> {}[*{}] is a fan-out — \
-                     parallel execution not yet implemented, running as single sequential invocation",
-                    self.state.run_id, stage_name, next_stage, limit_str
+                let spec = route.target.parallel_spec.as_ref().unwrap();
+                let limit_str = spec.limit.map(|l| format!("*{}", l)).unwrap_or_else(|| "*".to_string());
+                anyhow::bail!(
+                    "route {} -> {}[{}]: fan-out is not yet implemented — \
+                     remove the fan-out spec from your pipeline or wait for a future release",
+                    stage_name, next_stage, limit_str
                 );
             }
             let predicate_desc = format_route_source(&route.source);
@@ -738,7 +740,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fan_out_route_falls_through_with_no_panic() {
+    fn test_fan_out_route_errors_with_clear_message() {
         let state = RunState::new("r".into(), "p3".into(), "/tmp/t.line".into());
         let items = vec![
             mk_runner("r"),
@@ -766,7 +768,105 @@ mod tests {
         ];
         let mut rt = Runtime::new(state, items);
         rt.state.status = RunStatus::AwaitingResume { stage: "a".into() };
-        rt.resume_stage("a", vec![]).unwrap();
-        assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage } if stage == "b"));
+        let err = rt.resume_stage("a", vec![]).unwrap_err();
+        assert!(
+            err.to_string().contains("fan-out") && err.to_string().contains("not yet implemented"),
+            "expected fan-out error, got: {}", err
+        );
+    }
+
+    #[test]
+    fn test_history_beats_pipeline_input_for_same_artifact() {
+        // Revision loop: input.code is the original; revise.code is newer.
+        // Unqualified `in: code` should return revise.code (history), not input.code.
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("revise", "runner", &[("code", ArtifactKind::Value)]),
+            TlItem::Stage(StageDecl {
+                name: "analyze".into(),
+                inputs: vec![ArtifactDecl {
+                    name: "code".into(), source: None, optional: false,
+                    kind: ArtifactKind::Value, seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "revise".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.artifacts.set_ref("input.code", "original");
+        rt.state.artifacts.set_ref("revise.code", "revised");
+        rt.state.history = vec!["revise".to_string()];
+
+        let stages = rt.stages();
+        let stage = stages.get("analyze").unwrap();
+        let result = rt.stage_input_artifacts(stage, &rt.state.artifacts.clone());
+        assert_eq!(result["code"], "revised", "history should beat pipeline input: {}", result);
+    }
+
+    #[test]
+    fn test_input_source_pins_to_pipeline_input_despite_history() {
+        // Explicit `in: input.code as value` always returns pipeline input, ignoring history.
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("revise", "runner", &[("code", ArtifactKind::Value)]),
+            TlItem::Stage(StageDecl {
+                name: "analyze".into(),
+                inputs: vec![ArtifactDecl {
+                    name: "code".into(), source: Some("input".into()), optional: false,
+                    kind: ArtifactKind::Value, seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "revise".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.artifacts.set_ref("input.code", "original");
+        rt.state.artifacts.set_ref("revise.code", "revised");
+        rt.state.history = vec!["revise".to_string()];
+
+        let stages = rt.stages();
+        let stage = stages.get("analyze").unwrap();
+        let result = rt.stage_input_artifacts(stage, &rt.state.artifacts.clone());
+        assert_eq!(result["code"], "original", "explicit input.code should pin to pipeline input: {}", result);
+    }
+
+    #[test]
+    fn test_pipeline_input_used_when_no_history_matches() {
+        // Without any history producing `code`, input.code should still be found.
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            TlItem::Stage(StageDecl {
+                name: "analyze".into(),
+                inputs: vec![ArtifactDecl {
+                    name: "code".into(), source: None, optional: false,
+                    kind: ArtifactKind::Value, seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "analyze".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.artifacts.set_ref("input.code", "seed-value");
+        // No history, no stage output
+
+        let stages = rt.stages();
+        let stage = stages.get("analyze").unwrap();
+        let result = rt.stage_input_artifacts(stage, &rt.state.artifacts.clone());
+        assert_eq!(result["code"], "seed-value", "pipeline input should be used as fallback: {}", result);
     }
 }

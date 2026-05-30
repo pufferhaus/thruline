@@ -65,7 +65,7 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                 config_seen = true;
             }
             TlItem::Runner(r) => {
-                if r.name == "default" {
+                if r.name == "default" || r.name == "input" {
                     errors.push(ValidationError::ReservedRunnerName);
                 }
                 if !runner_names.insert(r.name.clone()) {
@@ -104,7 +104,8 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
             }
             for input in &s.inputs {
                 if let Some(src) = &input.source {
-                    if !stage_names.contains(src) {
+                    // "input" is the pipeline input namespace — always valid as a source
+                    if src != "input" && !stage_names.contains(src) {
                         errors.push(ValidationError::UnknownSourceStage {
                             stage: s.name.clone(),
                             input: input.name.clone(),
@@ -539,5 +540,45 @@ mod tests {
         let result = validate(&items);
         assert!(result.errors.iter().any(|e| matches!(e,
             ValidationError::UnknownSourceStage { from_stage, .. } if from_stage == "ghost-stage")));
+    }
+
+    #[test]
+    fn test_input_source_qualifier_is_valid() {
+        // `in: input.code as value` must NOT produce UnknownSourceStage
+        let items = vec![
+            runner("r"),
+            TlItem::Stage(StageDecl {
+                name: "analyze".to_string(),
+                inputs: vec![ArtifactDecl {
+                    name: "code".to_string(),
+                    source: Some("input".to_string()),
+                    optional: false,
+                    kind: ArtifactKind::Value,
+                    seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("r".to_string()),
+                prompt: None,
+                runs: vec![],
+            }),
+            pipeline("p", "analyze", vec![]),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.is_empty(), "input source qualifier should be valid: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_runner_named_input_is_reserved() {
+        let items = vec![TlItem::Runner(RunnerDecl {
+            name: "input".to_string(),
+            model: "m".to_string(),
+            system: None,
+            tools: vec![],
+            temperature: None,
+            max_tokens: None,
+        })];
+        let result = validate(&items);
+        assert!(result.errors.iter().any(|e| matches!(e, ValidationError::ReservedRunnerName)),
+            "runner named 'input' should be rejected: {:?}", result.errors);
     }
 }

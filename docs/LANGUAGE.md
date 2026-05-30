@@ -169,15 +169,34 @@ stage notify {
 
 When a stage is invoked, the runtime resolves each declared `in:` artifact in this order:
 
-1. **`stage.artifact`** — the stage's own store entry (written by a prior iteration, e.g. after a retry)
-2. **`input.artifact`** — pipeline-level input supplied via `--input`
-3. **`<prior>.artifact`** — scan completed stages newest-first; the first stage in history that produced an artifact with this name wins
+**If the source is explicit** (e.g. `classify.language as value` or `input.code as value`):
+- Look up that exact key directly. No fallback.
+- `input.x` always resolves to the pipeline input namespace, regardless of history.
+
+**If unqualified** (e.g. `language as value`):
+1. **`stage.artifact`** — the stage's own store entry (for retry loops where the stage re-ran)
+2. **`<prior>.artifact`** — scan completed stages newest-first; first match wins
+3. **`input.artifact`** — pipeline input (last resort default; used only when no stage has produced this artifact)
+
+Pipeline inputs are **seeds, not constants.** Once any stage produces an artifact with the same name, subsequent stages will see the stage's version, not the original input. Use an explicit `input.x` source to pin to the original pipeline input:
+
+```
+// analyze gets the most recently produced "code" — from revise if it ran, otherwise from --input
+stage analyze {
+  in: code as value
+}
+
+// analyze always gets the original pipeline input, even if revise produced a newer version
+stage analyze {
+  in: input.code as value
+}
+```
 
 This means you can freely pass artifacts between stages without explicit wiring:
 
 ```
 // classify writes classify.language and classify.complexity
-// analyze declares in: language — gets classify.language automatically
+// analyze declares in: language — gets classify.language automatically via history
 stage classify {
   out: language   as value
        complexity as value
@@ -190,7 +209,7 @@ stage analyze {
 }
 ```
 
-If two prior stages produced the same artifact name, the most recently completed stage wins. The stage's own `stage.artifact` always takes precedence over history (relevant for retry loops where the same stage re-runs and updates its own output).
+If two prior stages produced the same artifact name, the most recently completed stage wins.
 
 ### Run Blocks
 
@@ -391,7 +410,11 @@ Warnings: stages unreachable from a pipeline's `start`.
 ## Feature Gaps
 
 **Parallel fan-out/fan-in** (`[*N]` / `[*]`)
-Parsed, validated, not executed — falls through to sequential. `Scheduler` struct exists but is not wired into `resume_stage`. See `src/runtime/mod.rs` TODO.
+Parsed and validated. At runtime, a pipeline that routes to a fan-out target will fail with a clear error:
+```
+route gather -> worker[*3]: fan-out is not yet implemented
+```
+The `Scheduler` struct exists but is not wired into `resume_stage`. Fan-out pipelines are authorable and inspectable — they just cannot be executed yet.
 
 **`run` blocks (parallel stage invocations)**
 Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — follows same parallel execution path as fan-out. See `src/runtime/mod.rs` TODO.
