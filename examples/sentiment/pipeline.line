@@ -1,0 +1,50 @@
+config {
+  model: claude-haiku-4-5-20251001
+}
+
+runner analyst {
+  system: file("prompts/analyst.md")
+  temperature: 0.3
+  max_tokens: 256
+}
+
+runner writer {
+  system: file("prompts/writer.md")
+  max_tokens: 256
+}
+
+pipeline sentiment {
+  inputs {
+    text as value
+  }
+  start: classify
+  routes {
+    classify.sentiment == "positive" -> affirm
+    classify.sentiment != "positive" -> explain
+  }
+}
+
+stage classify {
+  in:  text      as value
+  out: sentiment as value
+       score     as value
+       notes     as value
+  runner: analyst
+  prompt: "Analyze the sentiment of the provided text."
+}
+
+stage affirm {
+  in:  sentiment as value
+       notes     as value
+  out: message as value
+  runner: writer
+  prompt: "Write a brief affirming reply based on the sentiment findings."
+}
+
+stage explain {
+  in:  sentiment as value
+       notes     as value
+  out: message as value
+  runner: writer
+  prompt: "Write a brief explanatory reply based on the sentiment findings."
+}
