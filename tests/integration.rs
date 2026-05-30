@@ -18,7 +18,7 @@ runner r {
   system: "You are a test agent."
 }
 stage a {
-  out: verdict as ref
+  out: verdict as value
   runner: r
 }
 stage b {

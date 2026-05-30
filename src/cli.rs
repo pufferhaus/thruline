@@ -95,7 +95,23 @@ fn load_recursive(
 
 fn cmd_validate(file: &Path) -> anyhow::Result<()> {
     let items  = load_items(file)?;
-    let result = validator::validate(&items);
+    let mut result = validator::validate(&items);
+
+    // Check system: file(...) paths exist relative to the .line file
+    let base = file.parent().unwrap_or(Path::new("."));
+    for item in &items {
+        if let TlItem::Runner(r) = item {
+            if let Some(crate::ast::PromptSource::File(rel)) = &r.system {
+                if !base.join(rel).exists() {
+                    result.errors.push(validator::ValidationError::SystemFileNotFound {
+                        name: r.name.clone(),
+                        path: rel.clone(),
+                    });
+                }
+            }
+        }
+    }
+
     for w in &result.warnings {
         eprintln!("warning: {}", w.0);
     }
@@ -120,8 +136,8 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
                 for input in &p.inputs {
                     let opt = if input.optional { "?" } else { "" };
                     let kind = match input.kind {
-                        crate::ast::ArtifactKind::File => "file",
-                        crate::ast::ArtifactKind::Ref  => "ref",
+                        crate::ast::ArtifactKind::Path  => "path",
+                        crate::ast::ArtifactKind::Value => "value",
                     };
                     println!("    {}{} as {}", input.name, opt, kind);
                 }
@@ -146,8 +162,7 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
                 } else {
                     route.target.stage.clone()
                 };
-                let par = if route.parallel { " parallel" } else { "" };
-                println!("    {} -> {}{}", src, tgt, par);
+                println!("    {} -> {}", src, tgt);
             }
             println!();
         }
@@ -167,8 +182,8 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
                     println!("  run: {}  (runner: {})", run.name, run_runner);
                     for a in &run.outputs {
                         let kind = match a.kind {
-                            crate::ast::ArtifactKind::File => "file",
-                            crate::ast::ArtifactKind::Ref  => "ref",
+                            crate::ast::ArtifactKind::Path  => "path",
+                            crate::ast::ArtifactKind::Value => "value",
                         };
                         println!("    out: {} as {}", a.name, kind);
                     }
@@ -176,8 +191,8 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
             }
             for a in &s.outputs {
                 let kind = match a.kind {
-                    crate::ast::ArtifactKind::File => "file",
-                    crate::ast::ArtifactKind::Ref  => "ref",
+                    crate::ast::ArtifactKind::Path  => "path",
+                    crate::ast::ArtifactKind::Value => "value",
                 };
                 println!("  out: {} as {}", a.name, kind);
             }

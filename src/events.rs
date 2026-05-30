@@ -8,6 +8,7 @@ pub struct RunnerSpec {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,

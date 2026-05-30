@@ -27,6 +27,12 @@ pub enum ValidationError {
     DuplicateInput(String, String),
     #[error("stage name 'input' is reserved — it conflicts with the pipeline input namespace")]
     ReservedStageName,
+    #[error("runner name 'default' is reserved — it is used as the synthetic name for stages with no runner")]
+    ReservedRunnerName,
+    #[error("route predicate on '{stage}.{artifact}' — predicates only work on value artifacts, not path")]
+    PredicateOnPathArtifact { stage: String, artifact: String },
+    #[error("runner '{name}' system prompt file '{path}' not found")]
+    SystemFileNotFound { name: String, path: String },
 }
 
 #[derive(Debug)]
@@ -59,6 +65,9 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                 config_seen = true;
             }
             TlItem::Runner(r) => {
+                if r.name == "default" {
+                    errors.push(ValidationError::ReservedRunnerName);
+                }
                 if !runner_names.insert(r.name.clone()) {
                     errors.push(ValidationError::DuplicateName(r.name.clone()));
                 }
@@ -152,6 +161,15 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                                 stage: stage.clone(),
                                 artifact: artifact.clone(),
                             });
+                        } else if let Some(TlItem::Stage(s)) = items.iter().find(|i| matches!(i, TlItem::Stage(s) if s.name == *stage)) {
+                            if let Some(decl) = s.outputs.iter().find(|a| a.name == *artifact) {
+                                if decl.kind == ArtifactKind::Path {
+                                    errors.push(ValidationError::PredicateOnPathArtifact {
+                                        stage: stage.clone(),
+                                        artifact: artifact.clone(),
+                                    });
+                                }
+                            }
                         }
                     }
                     referenced_stages.insert(stage.clone());
@@ -217,7 +235,7 @@ mod tests {
             outputs: outputs.iter().map(|o| ArtifactDecl {
                 name: o.to_string(),
                 optional: false,
-                kind: ArtifactKind::Ref,
+                kind: ArtifactKind::Value,
                 seed_path: None,
             }).collect(),
             runner: Some(runner_name.to_string()),
@@ -230,7 +248,6 @@ mod tests {
         Route {
             source: RouteSource::Stage(from.to_string()),
             target: RouteTarget { stage: to.to_string(), parallel_spec: None },
-            parallel: false,
         }
     }
 
@@ -309,7 +326,6 @@ mod tests {
                     value: "x".to_string(),
                 },
                 target: RouteTarget { stage: "b".to_string(), parallel_spec: None },
-                parallel: false,
             }]),
         ];
         let result = validate(&items);
@@ -329,7 +345,6 @@ mod tests {
                     stage: "b".to_string(),
                     parallel_spec: Some(ParallelSpec { limit: Some(2) }),
                 },
-                parallel: true,
             }]),
         ];
         let result = validate(&items);
@@ -350,12 +365,10 @@ mod tests {
                         stage: "b".to_string(),
                         parallel_spec: Some(ParallelSpec { limit: Some(0) }),
                     },
-                    parallel: true,
                 },
                 Route {
                     source: RouteSource::FanIn("b".to_string()),
                     target: RouteTarget { stage: "c".to_string(), parallel_spec: None },
-                    parallel: false,
                 },
             ]),
         ];
@@ -399,12 +412,10 @@ mod tests {
                         stage: "b".to_string(),
                         parallel_spec: Some(ParallelSpec { limit: Some(3) }),
                     },
-                    parallel: true,
                 },
                 Route {
                     source: RouteSource::FanIn("b".to_string()),
                     target: RouteTarget { stage: "c".to_string(), parallel_spec: None },
-                    parallel: false,
                 },
             ]),
         ];
@@ -427,7 +438,6 @@ mod tests {
                         value: "retry".to_string(),
                     },
                     target: RouteTarget { stage: "a".to_string(), parallel_spec: None },
-                    parallel: false,
                 },
             ]),
         ];

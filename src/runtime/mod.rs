@@ -324,7 +324,7 @@ mod tests {
         let state = RunState::new("r1".into(), "p".into(), "/tmp/test.line".into());
         let items = vec![
             mk_runner("runner"),
-            mk_stage("a", "runner", &[("verdict", ArtifactKind::Ref)]),
+            mk_stage("a", "runner", &[("verdict", ArtifactKind::Value)]),
             mk_stage("b", "runner", &[]),
             TlItem::Pipeline(PipelineDecl {
                 name: "p".into(),
@@ -342,7 +342,6 @@ mod tests {
                             stage: "b".into(),
                             parallel_spec: None,
                         },
-                        parallel: false,
                     },
                     Route {
                         source: RouteSource::Predicate {
@@ -355,7 +354,6 @@ mod tests {
                             stage: "a".into(),
                             parallel_spec: None,
                         },
-                        parallel: false,
                     },
                 ],
             }),
@@ -410,7 +408,6 @@ mod tests {
                 routes: vec![Route {
                     source: RouteSource::Stage("x".into()),
                     target: RouteTarget { stage: "y".into(), parallel_spec: None },
-                    parallel: false,
                 }],
             }),
         ];

@@ -58,8 +58,8 @@ pub struct ArtifactDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArtifactKind {
-    File,
-    Ref,
+    Path,
+    Value,
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +81,6 @@ pub struct PipelineDecl {
 pub struct Route {
     pub source: RouteSource,
     pub target: RouteTarget,
-    pub parallel: bool,
 }
 
 #[derive(Debug, Clone)]

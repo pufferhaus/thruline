@@ -16,7 +16,7 @@ file_ref    =  { "file" ~ "(" ~ quoted_str ~ ")" }
 prompt_val  =  { file_ref | quoted_str }
 
 // Artifact declarations
-artifact_kind = { "file" | "ref" }
+artifact_kind = { "path" | "value" }
 seed_init     = { "(" ~ quoted_str ~ ")" }
 opt_marker    = { "?" }
 artifact_decl = { identifier ~ opt_marker? ~ "as" ~ artifact_kind ~ seed_init? }
@@ -55,8 +55,7 @@ route_source = _{ predicate | fan_in_src | stage_src }
 
 fan_out_spec = { "[*" ~ pos_int? ~ "]" }
 stage_target = { identifier ~ fan_out_spec? }
-parallel_kw  = { "parallel" }
-route        = { route_source ~ "->" ~ stage_target ~ parallel_kw? }
+route        = { route_source ~ "->" ~ stage_target }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────
 pipe_start      = { "start" ~ ":" ~ identifier }

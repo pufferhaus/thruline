@@ -171,8 +171,8 @@ fn parse_artifact_decl(pair: Pair<Rule>) -> ArtifactDecl {
     // Next: artifact_kind
     let kind_pair = inner.next().unwrap();
     let kind = match kind_pair.as_str() {
-        "file" => ArtifactKind::File,
-        _      => ArtifactKind::Ref,
+        "path" => ArtifactKind::Path,
+        _      => ArtifactKind::Value,
     };
 
     // Optional: seed_init
@@ -214,8 +214,8 @@ fn parse_pipeline_inputs(pair: Pair<Rule>) -> Vec<InputDecl> {
             false
         };
         let kind = match inner.next().unwrap().as_str() {
-            "file" => ArtifactKind::File,
-            _      => ArtifactKind::Ref,
+            "path" => ArtifactKind::Path,
+            _      => ArtifactKind::Value,
         };
         InputDecl { name, optional, kind }
     }).collect()
@@ -254,18 +254,13 @@ fn parse_route(pair: Pair<Rule>) -> Route {
     let mut ti = target_pair.into_inner();
     let stage = ti.next().unwrap().as_str().to_string();
     let parallel_spec = ti.next().map(|spec| {
-        // fan_out_spec inner: optional pos_int
         let limit = spec.into_inner().next().map(|n| n.as_str().parse::<u32>().unwrap());
         ParallelSpec { limit }
     });
 
-    // Optional parallel_kw rule
-    let parallel = inner.next().map(|p| p.as_rule() == Rule::parallel_kw).unwrap_or(false);
-
     Route {
         source,
         target: RouteTarget { stage, parallel_spec },
-        parallel,
     }
 }
 
@@ -344,9 +339,9 @@ runner eng-lead {
     fn test_parse_stage_basic() {
         let src = r#"
 stage interview {
-  in: brief? as file("specs/brief.md")
-  out: spec as file
-       verdict as ref
+  in: brief? as path("specs/brief.md")
+  out: spec as path
+       verdict as value
   runner: feature-interviewer
   prompt: file("prompts/task.md")
 }
@@ -357,13 +352,13 @@ stage interview {
         assert_eq!(s.inputs.len(), 1);
         assert!(s.inputs[0].optional);
         assert_eq!(s.inputs[0].name, "brief");
-        assert_eq!(s.inputs[0].kind, ArtifactKind::File);
+        assert_eq!(s.inputs[0].kind, ArtifactKind::Path);
         assert_eq!(s.inputs[0].seed_path, Some("specs/brief.md".to_string()));
         assert_eq!(s.outputs.len(), 2);
         assert_eq!(s.outputs[0].name, "spec");
-        assert_eq!(s.outputs[0].kind, ArtifactKind::File);
+        assert_eq!(s.outputs[0].kind, ArtifactKind::Path);
         assert_eq!(s.outputs[1].name, "verdict");
-        assert_eq!(s.outputs[1].kind, ArtifactKind::Ref);
+        assert_eq!(s.outputs[1].kind, ArtifactKind::Value);
         assert_eq!(s.runner, Some("feature-interviewer".to_string()));
         assert!(matches!(&s.prompt, Some(PromptSource::File(p)) if p == "prompts/task.md"));
     }
@@ -377,7 +372,7 @@ pipeline feature-dev {
     interview.verdict == "approved" -> review
     interview.verdict == "rejected" -> interview
     review -> tip
-    tip -> implement[*3] parallel
+    tip -> implement[*3]
     implement[*] -> summary
   }
 }
@@ -400,7 +395,7 @@ pipeline feature-dev {
         assert_eq!(p.routes[1].target.stage, "interview");
 
         // Fan-out
-        assert!(p.routes[3].parallel);
+        assert!(p.routes[3].target.parallel_spec.is_some());
         assert_eq!(p.routes[3].target.stage, "implement");
         assert_eq!(p.routes[3].target.parallel_spec.as_ref().unwrap().limit, Some(3));
 
@@ -484,11 +479,11 @@ stage review {
   runner: analyst
   run fast {
     prompt: "Quick check."
-    out: quick-verdict as ref
+    out: quick-verdict as value
   }
   run thorough {
     runner: critic
-    out: detailed-verdict as ref
+    out: detailed-verdict as value
   }
 }
 "#;
@@ -516,9 +511,9 @@ stage review {
         let src = r#"
 pipeline code-review {
   inputs {
-    code     as file
-    language as ref
-    context? as ref
+    code     as path
+    language as value
+    context? as value
   }
   start: assess
   routes {
@@ -534,10 +529,10 @@ runner r { model: claude-sonnet-4-6 }
         assert_eq!(p.inputs.len(), 3);
         assert_eq!(p.inputs[0].name, "code");
         assert!(!p.inputs[0].optional);
-        assert_eq!(p.inputs[0].kind, ArtifactKind::File);
+        assert_eq!(p.inputs[0].kind, ArtifactKind::Path);
         assert_eq!(p.inputs[1].name, "language");
         assert!(!p.inputs[1].optional);
-        assert_eq!(p.inputs[1].kind, ArtifactKind::Ref);
+        assert_eq!(p.inputs[1].kind, ArtifactKind::Value);
         assert_eq!(p.inputs[2].name, "context");
         assert!(p.inputs[2].optional);
     }
