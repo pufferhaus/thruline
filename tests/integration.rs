@@ -290,3 +290,27 @@ fn test_api_driver_no_key_does_not_emit_pipeline_start() {
         "pipeline_start emitted before key check: {}", stdout
     );
 }
+
+#[test]
+fn test_resume_wrong_stage_emits_stage_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    let run_out = thruline()
+        .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
+        .output().unwrap();
+    let run_id = serde_json::from_str::<serde_json::Value>(
+        String::from_utf8_lossy(&run_out.stdout).lines().next().unwrap()
+    ).unwrap()["run_id"].as_str().unwrap().to_string();
+
+    // Resume with wrong stage name
+    let out = thruline()
+        .args(["resume", &run_id, "--stage", "wrongstage"])
+        .output().unwrap();
+    assert!(!out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(r#""event":"stage_error""#),
+        "stage_error not emitted: {}", stdout
+    );
+}

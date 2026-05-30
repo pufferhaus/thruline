@@ -315,11 +315,22 @@ pub async fn cmd_run(
                 inputs: serde_json::Value::Null,
             }.emit();
             let driver = crate::driver::stdio::StdioDriver;
+            let pending_stage = match &runtime.state.status {
+                crate::runtime::state::RunStatus::Running => {
+                    runtime.items.iter().find_map(|i| {
+                        if let crate::ast::TlItem::Pipeline(p) = i {
+                            if p.name == runtime.state.pipeline { Some(p.start.clone()) } else { None }
+                        } else { None }
+                    }).unwrap_or_else(|| "unknown".to_string())
+                }
+                crate::runtime::state::RunStatus::AwaitingResume { stage } => stage.clone(),
+                _ => "unknown".to_string(),
+            };
             if let Err(e) = runtime.advance(&driver).await {
                 crate::events::ThrulineEvent::PipelineError {
                     run_id: run_id.clone(),
                     ts: chrono::Utc::now(),
-                    stage: runtime.state.history.last().cloned().unwrap_or_else(|| "unknown".to_string()),
+                    stage: pending_stage,
                     error: e.to_string(),
                 }.emit();
                 return Err(e);
@@ -333,11 +344,22 @@ pub async fn cmd_run(
                 pipeline: pipeline.clone(),
                 inputs: serde_json::Value::Null,
             }.emit();
+            let pending_stage = match &runtime.state.status {
+                crate::runtime::state::RunStatus::Running => {
+                    runtime.items.iter().find_map(|i| {
+                        if let crate::ast::TlItem::Pipeline(p) = i {
+                            if p.name == runtime.state.pipeline { Some(p.start.clone()) } else { None }
+                        } else { None }
+                    }).unwrap_or_else(|| "unknown".to_string())
+                }
+                crate::runtime::state::RunStatus::AwaitingResume { stage } => stage.clone(),
+                _ => "unknown".to_string(),
+            };
             if let Err(e) = runtime.advance(&driver).await {
                 crate::events::ThrulineEvent::PipelineError {
                     run_id: run_id.clone(),
                     ts: chrono::Utc::now(),
-                    stage: runtime.state.history.last().cloned().unwrap_or_else(|| "unknown".to_string()),
+                    stage: pending_stage,
                     error: e.to_string(),
                 }.emit();
                 return Err(e);
@@ -386,12 +408,15 @@ pub async fn cmd_resume(
 
     if matches!(runtime.state.status, RunStatus::AwaitingResume { .. }) {
         let driver = crate::driver::stdio::StdioDriver;
+        let pending_stage = match &runtime.state.status {
+            RunStatus::AwaitingResume { stage } => stage.clone(),
+            _ => "unknown".to_string(),
+        };
         if let Err(e) = runtime.advance(&driver).await {
             crate::events::ThrulineEvent::PipelineError {
                 run_id: run_id.to_string(),
                 ts: chrono::Utc::now(),
-                stage: runtime.state.history.last()
-                    .cloned().unwrap_or_else(|| "unknown".to_string()),
+                stage: pending_stage,
                 error: e.to_string(),
             }
             .emit();
