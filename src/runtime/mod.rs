@@ -16,6 +16,17 @@ pub struct Runtime {
     pub items: Vec<TlItem>,
 }
 
+fn format_route_source(source: &RouteSource) -> String {
+    match source {
+        RouteSource::Stage(s) => format!("Stage({})", s),
+        RouteSource::FanIn(s) => format!("FanIn({})", s),
+        RouteSource::Predicate { stage, artifact, op, value } => {
+            let op_str = match op { CompareOp::Eq => "==", CompareOp::Ne => "!=" };
+            format!("{}.{} {} \"{}\"", stage, artifact, op_str, value)
+        }
+    }
+}
+
 impl Runtime {
     pub fn new(state: RunState, items: Vec<TlItem>) -> Self {
         Self { state, items }
@@ -310,7 +321,7 @@ impl Runtime {
             // instead of single AwaitingResume. ParallelStart/ParallelSlotOpen/
             // ParallelDone events and RunStatus::ParallelAwait are defined but
             // not yet wired here.
-            let predicate_desc = format!("{:?}", route.source);
+            let predicate_desc = format_route_source(&route.source);
             ThrulineEvent::RouteTaken {
                 run_id: self.state.run_id.clone(),
                 ts: chrono::Utc::now(),
@@ -667,5 +678,27 @@ mod tests {
         rt.state.status = RunStatus::Done;
         let err = rt.resume_stage("a", vec![]).unwrap_err();
         assert!(err.to_string().contains("already done"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_format_route_source_predicate() {
+        assert_eq!(
+            format_route_source(&RouteSource::Predicate {
+                stage: "review".into(),
+                artifact: "verdict".into(),
+                op: CompareOp::Eq,
+                value: "approved".into(),
+            }),
+            r#"review.verdict == "approved""#
+        );
+        assert_eq!(format_route_source(&RouteSource::Stage("a".into())), "Stage(a)");
+        assert_eq!(format_route_source(&RouteSource::FanIn("workers".into())), "FanIn(workers)");
+        assert_eq!(
+            format_route_source(&RouteSource::Predicate {
+                stage: "a".into(), artifact: "v".into(),
+                op: CompareOp::Ne, value: "rejected".into(),
+            }),
+            r#"a.v != "rejected""#
+        );
     }
 }
