@@ -30,6 +30,9 @@ pub enum Commands {
         pipeline: Option<String>,
         #[arg(long, default_value = "stdio")]
         driver: String,
+        /// Pipeline inputs: key=value (prefix file:// for file artifacts)
+        #[arg(long = "input")]
+        inputs: Vec<String>,
     },
     /// Feed agent output back to a suspended run
     Resume {
@@ -49,7 +52,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Inspect  { file }  => cmd_inspect(&file),
         Commands::Runs               => cmd_runs(),
         Commands::Status { run_id }  => cmd_status(&run_id),
-        Commands::Run { file, pipeline, driver } => cmd_run(&file, pipeline.as_deref(), &driver).await,
+        Commands::Run { file, pipeline, driver, inputs } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs).await,
         Commands::Resume { run_id, stage, artifacts } => cmd_resume(&run_id, &stage, &artifacts).await,
     }
 }
@@ -112,6 +115,17 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
     for item in &items {
         if let TlItem::Pipeline(p) = item {
             println!("pipeline: {}", p.name);
+            if !p.inputs.is_empty() {
+                println!("  inputs:");
+                for input in &p.inputs {
+                    let opt = if input.optional { "?" } else { "" };
+                    let kind = match input.kind {
+                        crate::ast::ArtifactKind::File => "file",
+                        crate::ast::ArtifactKind::Ref  => "ref",
+                    };
+                    println!("    {}{} as {}", input.name, opt, kind);
+                }
+            }
             println!("  start: {}", p.start);
             println!("  routes:");
             for route in &p.routes {
@@ -226,6 +240,7 @@ pub async fn cmd_run(
     file: &Path,
     pipeline_name: Option<&str>,
     driver_name: &str,
+    input_args: &[String],
 ) -> anyhow::Result<()> {
     use crate::runtime::Runtime;
     use uuid::Uuid;
@@ -252,7 +267,29 @@ pub async fn cmd_run(
     };
 
     let run_id = Uuid::new_v4().to_string()[..8].to_string();
-    let state  = RunState::new(run_id.clone(), pipeline.clone(), file.canonicalize()?);
+    let mut state = RunState::new(run_id.clone(), pipeline.clone(), file.canonicalize()?);
+
+    // Pre-seed pipeline inputs into the artifact store under the input.* namespace
+    for arg in input_args {
+        let (k, v) = arg
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("--input must be key=value, got '{}'", arg))?;
+        let store_key = format!("input.{}", k);
+        if v.starts_with("file://") {
+            state.artifacts.set_file(&store_key, &v[7..]);
+        } else {
+            state.artifacts.set_ref(&store_key, v);
+        }
+    }
+
+    let config_model = items.iter().find_map(|i| {
+        if let TlItem::Config(c) = i { c.model.clone() } else { None }
+    });
+
+    let mut runtime = Runtime::new(state, items);
+
+    // Validate required pipeline inputs are present before first advance
+    runtime.check_pipeline_inputs()?;
 
     crate::events::ThrulineEvent::PipelineStart {
         run_id: run_id.clone(),
@@ -261,12 +298,6 @@ pub async fn cmd_run(
         inputs: serde_json::Value::Null,
     }
     .emit();
-
-    let config_model = items.iter().find_map(|i| {
-        if let TlItem::Config(c) = i { c.model.clone() } else { None }
-    });
-
-    let mut runtime = Runtime::new(state, items);
 
     match driver_name {
         "stdio" => {

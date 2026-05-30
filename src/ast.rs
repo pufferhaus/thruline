@@ -63,8 +63,16 @@ pub enum ArtifactKind {
 }
 
 #[derive(Debug, Clone)]
+pub struct InputDecl {
+    pub name: String,
+    pub optional: bool,
+    pub kind: ArtifactKind,
+}
+
+#[derive(Debug, Clone)]
 pub struct PipelineDecl {
     pub name: String,
+    pub inputs: Vec<InputDecl>,
     pub start: String,
     pub routes: Vec<Route>,
 }

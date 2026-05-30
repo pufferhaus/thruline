@@ -23,6 +23,10 @@ pub enum ValidationError {
     DuplicateConfig,
     #[error("stage '{stage}' run '{run}' references unknown runner '{runner}'")]
     UnknownRunnerInRun { stage: String, run: String, runner: String },
+    #[error("pipeline '{0}' has duplicate input name '{1}'")]
+    DuplicateInput(String, String),
+    #[error("stage name 'input' is reserved — it conflicts with the pipeline input namespace")]
+    ReservedStageName,
 }
 
 #[derive(Debug)]
@@ -60,6 +64,9 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                 }
             }
             TlItem::Stage(s) => {
+                if s.name == "input" {
+                    errors.push(ValidationError::ReservedStageName);
+                }
                 if !stage_names.insert(s.name.clone()) {
                     errors.push(ValidationError::DuplicateName(s.name.clone()));
                 }
@@ -100,9 +107,16 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
         }
     }
 
-    // Third pass: validate pipeline routes
+    // Third pass: validate pipeline inputs and routes
     for item in items {
         let TlItem::Pipeline(p) = item else { continue };
+
+        let mut input_names: HashSet<String> = HashSet::new();
+        for input in &p.inputs {
+            if !input_names.insert(input.name.clone()) {
+                errors.push(ValidationError::DuplicateInput(p.name.clone(), input.name.clone()));
+            }
+        }
 
         let mut fan_out_stages: HashSet<String> = HashSet::new();
         let mut fan_in_stages:  HashSet<String> = HashSet::new();
@@ -223,6 +237,7 @@ mod tests {
     fn pipeline(name: &str, start: &str, routes: Vec<Route>) -> TlItem {
         TlItem::Pipeline(PipelineDecl {
             name: name.to_string(),
+            inputs: vec![],
             start: start.to_string(),
             routes,
         })

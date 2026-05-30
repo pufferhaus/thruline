@@ -188,15 +188,37 @@ fn parse_pipeline(pair: Pair<Rule>) -> PipelineDecl {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
 
-    // pipe_start: "start" ":" identifier
-    let pipe_start = inner.next().unwrap();
-    let start = pipe_start.into_inner().next().unwrap().as_str().to_string();
+    // optional inputs block, then pipe_start, then routes_block
+    let next = inner.next().unwrap();
+    let (inputs, start_pair) = if next.as_rule() == Rule::pipeline_inputs {
+        (parse_pipeline_inputs(next), inner.next().unwrap())
+    } else {
+        (vec![], next)
+    };
+    let start = start_pair.into_inner().next().unwrap().as_str().to_string();
 
-    // routes_block: "routes" "{" route* "}"
     let routes_pair = inner.next().unwrap();
     let routes = routes_pair.into_inner().map(parse_route).collect();
 
-    PipelineDecl { name, start, routes }
+    PipelineDecl { name, inputs, start, routes }
+}
+
+fn parse_pipeline_inputs(pair: Pair<Rule>) -> Vec<InputDecl> {
+    pair.into_inner().map(|p| {
+        let mut inner = p.into_inner().peekable();
+        let name = inner.next().unwrap().as_str().to_string();
+        let optional = if inner.peek().map(|p| p.as_rule()) == Some(Rule::opt_marker) {
+            inner.next();
+            true
+        } else {
+            false
+        };
+        let kind = match inner.next().unwrap().as_str() {
+            "file" => ArtifactKind::File,
+            _      => ArtifactKind::Ref,
+        };
+        InputDecl { name, optional, kind }
+    }).collect()
 }
 
 fn parse_route(pair: Pair<Rule>) -> Route {
@@ -487,5 +509,50 @@ stage review {
         assert_eq!(thorough.name, "thorough");
         assert_eq!(thorough.runner, Some("critic".to_string()));
         assert_eq!(thorough.outputs[0].name, "detailed-verdict");
+    }
+
+    #[test]
+    fn test_parse_pipeline_with_inputs() {
+        let src = r#"
+pipeline code-review {
+  inputs {
+    code     as file
+    language as ref
+    context? as ref
+  }
+  start: assess
+  routes {
+    assess -> report
+  }
+}
+stage assess { runner: r }
+stage report  { runner: r }
+runner r { model: claude-sonnet-4-6 }
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Pipeline(p) = &items[0] else { panic!() };
+        assert_eq!(p.inputs.len(), 3);
+        assert_eq!(p.inputs[0].name, "code");
+        assert!(!p.inputs[0].optional);
+        assert_eq!(p.inputs[0].kind, ArtifactKind::File);
+        assert_eq!(p.inputs[1].name, "language");
+        assert!(!p.inputs[1].optional);
+        assert_eq!(p.inputs[1].kind, ArtifactKind::Ref);
+        assert_eq!(p.inputs[2].name, "context");
+        assert!(p.inputs[2].optional);
+    }
+
+    #[test]
+    fn test_parse_pipeline_without_inputs_still_valid() {
+        let src = r#"
+pipeline p {
+  start: a
+  routes {}
+}
+stage a {}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Pipeline(p) = &items[0] else { panic!() };
+        assert!(p.inputs.is_empty());
     }
 }

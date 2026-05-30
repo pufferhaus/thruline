@@ -98,6 +98,7 @@ impl Runtime {
     }
 
     /// Build input artifacts JSON for a stage from the store.
+    /// Looks up stage.artifact first, then falls back to input.artifact (pipeline inputs).
     fn stage_input_artifacts(
         &self,
         stage: &StageDecl,
@@ -105,20 +106,48 @@ impl Runtime {
     ) -> serde_json::Value {
         let mut map = serde_json::Map::new();
         for input in &stage.inputs {
-            let key = format!("{}.{}", stage.name, input.name);
-            if let Some(path) = artifacts.get_file(&key) {
-                map.insert(
-                    input.name.clone(),
-                    serde_json::Value::String(path.to_string_lossy().into_owned()),
-                );
-            } else if let Some(val) = artifacts.get_ref(&key) {
-                map.insert(
-                    input.name.clone(),
-                    serde_json::Value::String(val.to_string()),
-                );
+            let stage_key = format!("{}.{}", stage.name, input.name);
+            let input_key = format!("input.{}", input.name);
+            let value = if let Some(path) = artifacts.get_file(&stage_key) {
+                Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+            } else if let Some(val) = artifacts.get_ref(&stage_key) {
+                Some(serde_json::Value::String(val.to_string()))
+            } else if let Some(path) = artifacts.get_file(&input_key) {
+                Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+            } else if let Some(val) = artifacts.get_ref(&input_key) {
+                Some(serde_json::Value::String(val.to_string()))
+            } else {
+                None
+            };
+            if let Some(v) = value {
+                map.insert(input.name.clone(), v);
             }
         }
         serde_json::Value::Object(map)
+    }
+
+    /// Validate that all required pipeline inputs are present before first advance.
+    pub fn check_pipeline_inputs(&self) -> anyhow::Result<()> {
+        let pipeline = match self.items.iter().find_map(|i| {
+            if let TlItem::Pipeline(p) = i { if p.name == self.state.pipeline { return Some(p); } }
+            None
+        }) {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+        for input in &pipeline.inputs {
+            if input.optional { continue; }
+            let key = format!("input.{}", input.name);
+            let present = self.state.artifacts.get_file(&key).is_some()
+                || self.state.artifacts.get_ref(&key).is_some();
+            if !present {
+                anyhow::bail!(
+                    "missing required pipeline input '{}' — provide with --input {}=<value>",
+                    input.name, input.name
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Advance the pipeline one step: invoke the current stage via the driver.
@@ -299,6 +328,7 @@ mod tests {
             mk_stage("b", "runner", &[]),
             TlItem::Pipeline(PipelineDecl {
                 name: "p".into(),
+                inputs: vec![],
                 start: "a".into(),
                 routes: vec![
                     Route {
@@ -375,6 +405,7 @@ mod tests {
             mk_stage("y", "r", &[]),
             TlItem::Pipeline(PipelineDecl {
                 name: "p2".into(),
+                inputs: vec![],
                 start: "x".into(),
                 routes: vec![Route {
                     source: RouteSource::Stage("x".into()),
