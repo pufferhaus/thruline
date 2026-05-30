@@ -116,7 +116,6 @@ stage <name> {
   out:    <artifact-decl>+
   runner: <runner-name>
   prompt: "<inline text>" | file("<path>")
-  format: <identifier>
   run <name> { ... }
   ...
 }
@@ -128,7 +127,6 @@ stage <name> {
 | `in` | Input artifacts consumed by this stage |
 | `out` | Output artifacts produced by this stage |
 | `prompt` | Task-level prompt passed alongside the system prompt |
-| `format` | Output format hint (parsed but not enforced — see Feature Gaps) |
 | `run` | Named parallel invocation (see below) |
 
 A bare stage is valid:
@@ -147,17 +145,17 @@ stage checkpoint {}
 |---|---|
 | `<name>` | Artifact identifier, scoped as `stage.name` at runtime |
 | `?` | Optional — stage runs even if this input is absent |
-| `as file` | Disk-persisted artifact; absolute path stored in run state |
-| `as ref` | In-memory string value stored in run state |
+| `as path` | Disk-persisted artifact; absolute path stored in run state |
+| `as value` | In-memory string stored in run state |
 | `("path")` | Seed path — pre-populates the artifact before the stage runs |
 
 **Examples:**
 
 ```
 stage interview {
-  in:  brief? as file("specs/brief.md")
-  out: spec    as file
-       verdict as ref
+  in:  brief? as path("specs/brief.md")
+  out: spec    as path
+       verdict as value
   runner: analyst
   prompt: file("prompts/task.md")
 }
@@ -166,6 +164,33 @@ stage notify {
   prompt: "Summarize and notify."
 }
 ```
+
+### Artifact Resolution
+
+When a stage is invoked, the runtime resolves each declared `in:` artifact in this order:
+
+1. **`stage.artifact`** — the stage's own store entry (written by a prior iteration, e.g. after a retry)
+2. **`input.artifact`** — pipeline-level input supplied via `--input`
+3. **`<prior>.artifact`** — scan completed stages newest-first; the first stage in history that produced an artifact with this name wins
+
+This means you can freely pass artifacts between stages without explicit wiring:
+
+```
+// classify writes classify.language and classify.complexity
+// analyze declares in: language — gets classify.language automatically
+stage classify {
+  out: language   as value
+       complexity as value
+}
+
+stage analyze {
+  in:  language   as value   // resolved from classify via history
+       complexity as value
+  out: verdict as value
+}
+```
+
+If two prior stages produced the same artifact name, the most recently completed stage wins. The stage's own `stage.artifact` always takes precedence over history (relevant for retry loops where the same stage re-runs and updates its own output).
 
 ### Run Blocks
 
@@ -192,14 +217,14 @@ stage dual-review {
   runner: analyst            // default for runs without their own runner
   run quality {
     prompt: "Assess correctness and completeness."
-    out: verdict as ref
-         notes   as ref
+    out: verdict as value
+         notes   as value
   }
   run risk {
     runner: critic           // overrides the stage default
     prompt: "Identify risks and failure modes."
-    out: risks    as ref
-         severity as ref
+    out: risks    as value
+         severity as value
   }
 }
 ```
@@ -373,26 +398,20 @@ Parsed, validated, not executed — falls through to sequential. `Scheduler` str
 **`run` blocks (parallel stage invocations)**
 Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — follows same parallel execution path as fan-out. See `src/runtime/mod.rs` TODO.
 
-**`format` field on stages**
-Parsed, stored, never acted on. Semantics undefined.
+**Seed paths** (`as path("seed.md")`)
+The seed-path syntax in artifact declarations is parsed and stored but never applied at runtime. Declaring `in: brief? as path("default-brief.md")` does not pre-populate the artifact store before the stage runs.
 
 **Compound route predicates**
 `==` and `!=` against a single string only. No `&&`, `||`, numeric comparisons.
 
-**No pipeline-level inputs**
-No syntax to pass named arguments at `thruline run` time. Pre-seeding via `seed_init` in artifact declarations is the only mechanism.
-
 **No retry limit**
 Back-edge routes create unbounded loops. No `max_retries` or timeout.
-
-**`system: file(...)` unvalidated statically**
-Missing file paths pass `validate` and only fail at runtime.
 
 **Model string unvalidated**
 Typos in model identifiers fail at API call time, not validate time.
 
 **No string escape sequences**
-Quoted strings terminate at the first `"` — backslash escaping is not supported. Use `file("path")` for system prompts containing quotes or special characters.
+Quoted strings terminate at the first `"` — backslash escaping is not supported. Use `file("path")` for system prompts or prompts containing quotes or special characters.
 
 **Identifier syntax allows `-`**
 Hyphens in identifiers (`my-runner`, `dual-review`) cause friction when artifact keys are used as JSON object keys, since hyphenated keys require quoting in most languages.

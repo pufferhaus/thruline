@@ -98,7 +98,12 @@ impl Runtime {
     }
 
     /// Build input artifacts JSON for a stage from the store.
-    /// Looks up stage.artifact first, then falls back to input.artifact (pipeline inputs).
+    ///
+    /// Resolution order for each declared input:
+    ///   1. `stage.artifact`   — the stage's own prior output (e.g. a retry wrote it)
+    ///   2. `input.artifact`   — pipeline-level input supplied via --input
+    ///   3. `<prior>.artifact` — scan completed stages in reverse history order;
+    ///                           first stage that produced an artifact with this name wins
     fn stage_input_artifacts(
         &self,
         stage: &StageDecl,
@@ -108,6 +113,7 @@ impl Runtime {
         for input in &stage.inputs {
             let stage_key = format!("{}.{}", stage.name, input.name);
             let input_key = format!("input.{}", input.name);
+
             let value = if let Some(path) = artifacts.get_file(&stage_key) {
                 Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
             } else if let Some(val) = artifacts.get_ref(&stage_key) {
@@ -117,8 +123,21 @@ impl Runtime {
             } else if let Some(val) = artifacts.get_ref(&input_key) {
                 Some(serde_json::Value::String(val.to_string()))
             } else {
-                None
+                // Scan history newest-first for any prior stage that produced this name
+                let mut found = None;
+                for prior in self.state.history.iter().rev() {
+                    let key = format!("{}.{}", prior, input.name);
+                    if let Some(path) = artifacts.get_file(&key) {
+                        found = Some(serde_json::Value::String(path.to_string_lossy().into_owned()));
+                        break;
+                    } else if let Some(val) = artifacts.get_ref(&key) {
+                        found = Some(serde_json::Value::String(val.to_string()));
+                        break;
+                    }
+                }
+                found
             };
+
             if let Some(v) = value {
                 map.insert(input.name.clone(), v);
             }
@@ -432,11 +451,127 @@ mod tests {
     fn test_resume_stage_updates_artifacts_and_advances() {
         let mut rt = mk_runtime();
         rt.state.status = crate::runtime::state::RunStatus::AwaitingResume { stage: "a".into() };
-        // Feed verdict=ok back
         rt.resume_stage("a", vec![("verdict".to_string(), "ok".to_string(), false)]).unwrap();
-        // Should advance to stage "b"
         assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage } if stage == "b"));
-        // Artifact should be stored
         assert_eq!(rt.state.artifacts.get_ref("a.verdict"), Some("ok"));
+    }
+
+    #[test]
+    fn test_stage_input_artifacts_history_fallback() {
+        // Stage b declares in: verdict — should find a.verdict via history lookup
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            TlItem::Stage(StageDecl {
+                name: "a".into(),
+                inputs: vec![],
+                outputs: vec![ArtifactDecl { name: "verdict".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                runner: Some("runner".into()),
+                prompt: None,
+                runs: vec![],
+            }),
+            TlItem::Stage(StageDecl {
+                name: "b".into(),
+                inputs: vec![ArtifactDecl { name: "verdict".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None,
+                runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(),
+                inputs: vec![],
+                start: "a".into(),
+                routes: vec![Route {
+                    source: RouteSource::Stage("a".into()),
+                    target: RouteTarget { stage: "b".into(), parallel_spec: None },
+                }],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+
+        // Simulate a completing — stores a.verdict, adds to history
+        rt.state.artifacts.set_ref("a.verdict", "approved");
+        rt.state.history.push("a".to_string());
+
+        let stages = rt.stages();
+        let stage_b = stages.get("b").unwrap();
+        let result = rt.stage_input_artifacts(stage_b, &rt.state.artifacts.clone());
+
+        // b.verdict and input.verdict are both absent — should find a.verdict via history
+        assert_eq!(result["verdict"], "approved");
+    }
+
+    #[test]
+    fn test_stage_input_artifacts_history_prefers_most_recent() {
+        // If two prior stages both produced the same artifact name, newest wins
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("a", "runner", &[("score", ArtifactKind::Value)]),
+            mk_stage("b", "runner", &[("score", ArtifactKind::Value)]),
+            TlItem::Stage(StageDecl {
+                name: "c".into(),
+                inputs: vec![ArtifactDecl { name: "score".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None,
+                runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(),
+                inputs: vec![],
+                start: "a".into(),
+                routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+
+        rt.state.artifacts.set_ref("a.score", "first");
+        rt.state.artifacts.set_ref("b.score", "second");
+        rt.state.history = vec!["a".to_string(), "b".to_string()];
+
+        let stages = rt.stages();
+        let stage_c = stages.get("c").unwrap();
+        let result = rt.stage_input_artifacts(stage_c, &rt.state.artifacts.clone());
+
+        // b ran after a, so b.score wins
+        assert_eq!(result["score"], "second");
+    }
+
+    #[test]
+    fn test_stage_input_artifacts_own_key_beats_history() {
+        // stage.artifact takes precedence over history lookup
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("a", "runner", &[("note", ArtifactKind::Value)]),
+            TlItem::Stage(StageDecl {
+                name: "b".into(),
+                inputs: vec![ArtifactDecl { name: "note".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None,
+                runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(),
+                inputs: vec![],
+                start: "a".into(),
+                routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+
+        rt.state.artifacts.set_ref("a.note", "from-history");
+        rt.state.artifacts.set_ref("b.note", "own-output");
+        rt.state.history = vec!["a".to_string()];
+
+        let stages = rt.stages();
+        let stage_b = stages.get("b").unwrap();
+        let result = rt.stage_input_artifacts(stage_b, &rt.state.artifacts.clone());
+
+        // b.note exists directly — should not fall through to history
+        assert_eq!(result["note"], "own-output");
     }
 }
