@@ -156,32 +156,37 @@ fn parse_run_decl(pair: Pair<Rule>) -> RunDecl {
 fn parse_artifact_decl(pair: Pair<Rule>) -> ArtifactDecl {
     let mut inner = pair.into_inner().peekable();
 
-    // First token: identifier (the artifact name)
-    let name_tok = inner.next().unwrap().as_str();
-    let name = name_tok.to_string();
+    // Optional: artifact_source (e.g. "classify.") — present when user wrote stage.artifact
+    let source = if inner.peek().map(|p| p.as_rule()) == Some(Rule::artifact_source) {
+        let src = inner.next().unwrap();
+        Some(src.into_inner().next().unwrap().as_str().to_string())
+    } else {
+        None
+    };
 
-    // Next might be the opt_marker rule or directly artifact_kind
+    // Next: identifier (local binding name)
+    let name = inner.next().unwrap().as_str().to_string();
+
+    // Next might be opt_marker or artifact_kind
     let optional = if inner.peek().map(|p| p.as_rule()) == Some(Rule::opt_marker) {
-        inner.next(); // consume opt_marker
+        inner.next();
         true
     } else {
         false
     };
 
     // Next: artifact_kind
-    let kind_pair = inner.next().unwrap();
-    let kind = match kind_pair.as_str() {
+    let kind = match inner.next().unwrap().as_str() {
         "path" => ArtifactKind::Path,
         _      => ArtifactKind::Value,
     };
 
     // Optional: seed_init
     let seed_path = inner.next().map(|seed| {
-        // seed_init contains a quoted_str
         unquote(seed.into_inner().next().unwrap().as_str())
     });
 
-    ArtifactDecl { name, optional, kind, seed_path }
+    ArtifactDecl { name, source, optional, kind, seed_path }
 }
 
 fn parse_pipeline(pair: Pair<Rule>) -> PipelineDecl {
@@ -549,5 +554,42 @@ stage a {}
         let items = parse_str(src).unwrap();
         let TlItem::Pipeline(p) = &items[0] else { panic!() };
         assert!(p.inputs.is_empty());
+    }
+
+    #[test]
+    fn test_parse_qualified_artifact_source() {
+        let src = r#"
+stage analyze {
+  in: classify.language as value
+      classify.complexity as value
+      code as value
+}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Stage(s) = &items[0] else { panic!() };
+        assert_eq!(s.inputs.len(), 3);
+
+        // Qualified: source = "classify", name = "language"
+        assert_eq!(s.inputs[0].source, Some("classify".to_string()));
+        assert_eq!(s.inputs[0].name, "language");
+        assert_eq!(s.inputs[0].kind, ArtifactKind::Value);
+
+        assert_eq!(s.inputs[1].source, Some("classify".to_string()));
+        assert_eq!(s.inputs[1].name, "complexity");
+
+        // Unqualified: source = None
+        assert_eq!(s.inputs[2].source, None);
+        assert_eq!(s.inputs[2].name, "code");
+    }
+
+    #[test]
+    fn test_parse_qualified_source_optional() {
+        let src = r#"stage s { in: prev.doc? as path }"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Stage(s) = &items[0] else { panic!() };
+        assert_eq!(s.inputs[0].source, Some("prev".to_string()));
+        assert_eq!(s.inputs[0].name, "doc");
+        assert!(s.inputs[0].optional);
+        assert_eq!(s.inputs[0].kind, ArtifactKind::Path);
     }
 }

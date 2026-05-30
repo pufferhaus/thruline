@@ -51,6 +51,7 @@ pub struct StageDecl {
 #[derive(Debug, Clone)]
 pub struct ArtifactDecl {
     pub name: String,
+    pub source: Option<String>,  // explicit stage source, e.g. "classify" in classify.language
     pub optional: bool,
     pub kind: ArtifactKind,
     pub seed_path: Option<String>,

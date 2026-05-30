@@ -100,10 +100,14 @@ impl Runtime {
     /// Build input artifacts JSON for a stage from the store.
     ///
     /// Resolution order for each declared input:
-    ///   1. `stage.artifact`   — the stage's own prior output (e.g. a retry wrote it)
+    ///
+    /// If `source` is explicit (e.g. `classify.language as value`):
+    ///   - Look up `classify.language` directly. No fallback.
+    ///
+    /// If unqualified (e.g. `language as value`):
+    ///   1. `stage.artifact`   — the stage's own prior output (e.g. retry wrote it)
     ///   2. `input.artifact`   — pipeline-level input supplied via --input
-    ///   3. `<prior>.artifact` — scan completed stages in reverse history order;
-    ///                           first stage that produced an artifact with this name wins
+    ///   3. `<prior>.artifact` — scan completed stages newest-first; first match wins
     fn stage_input_artifacts(
         &self,
         stage: &StageDecl,
@@ -111,31 +115,41 @@ impl Runtime {
     ) -> serde_json::Value {
         let mut map = serde_json::Map::new();
         for input in &stage.inputs {
-            let stage_key = format!("{}.{}", stage.name, input.name);
-            let input_key = format!("input.{}", input.name);
-
-            let value = if let Some(path) = artifacts.get_file(&stage_key) {
-                Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
-            } else if let Some(val) = artifacts.get_ref(&stage_key) {
-                Some(serde_json::Value::String(val.to_string()))
-            } else if let Some(path) = artifacts.get_file(&input_key) {
-                Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
-            } else if let Some(val) = artifacts.get_ref(&input_key) {
-                Some(serde_json::Value::String(val.to_string()))
-            } else {
-                // Scan history newest-first for any prior stage that produced this name
-                let mut found = None;
-                for prior in self.state.history.iter().rev() {
-                    let key = format!("{}.{}", prior, input.name);
-                    if let Some(path) = artifacts.get_file(&key) {
-                        found = Some(serde_json::Value::String(path.to_string_lossy().into_owned()));
-                        break;
-                    } else if let Some(val) = artifacts.get_ref(&key) {
-                        found = Some(serde_json::Value::String(val.to_string()));
-                        break;
-                    }
+            let value = if let Some(src) = &input.source {
+                // Explicit source: look up stage.artifact directly
+                let key = format!("{}.{}", src, input.name);
+                if let Some(path) = artifacts.get_file(&key) {
+                    Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+                } else {
+                    artifacts.get_ref(&key).map(|v| serde_json::Value::String(v.to_string()))
                 }
-                found
+            } else {
+                let stage_key = format!("{}.{}", stage.name, input.name);
+                let input_key = format!("input.{}", input.name);
+
+                if let Some(path) = artifacts.get_file(&stage_key) {
+                    Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+                } else if let Some(val) = artifacts.get_ref(&stage_key) {
+                    Some(serde_json::Value::String(val.to_string()))
+                } else if let Some(path) = artifacts.get_file(&input_key) {
+                    Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+                } else if let Some(val) = artifacts.get_ref(&input_key) {
+                    Some(serde_json::Value::String(val.to_string()))
+                } else {
+                    // Scan history newest-first for any prior stage that produced this name
+                    let mut found = None;
+                    for prior in self.state.history.iter().rev() {
+                        let key = format!("{}.{}", prior, input.name);
+                        if let Some(path) = artifacts.get_file(&key) {
+                            found = Some(serde_json::Value::String(path.to_string_lossy().into_owned()));
+                            break;
+                        } else if let Some(val) = artifacts.get_ref(&key) {
+                            found = Some(serde_json::Value::String(val.to_string()));
+                            break;
+                        }
+                    }
+                    found
+                }
             };
 
             if let Some(v) = value {
@@ -328,6 +342,7 @@ mod tests {
                 .iter()
                 .map(|(n, k)| ArtifactDecl {
                     name: n.to_string(),
+                    source: None,
                     optional: false,
                     kind: k.clone(),
                     seed_path: None,
@@ -465,14 +480,14 @@ mod tests {
             TlItem::Stage(StageDecl {
                 name: "a".into(),
                 inputs: vec![],
-                outputs: vec![ArtifactDecl { name: "verdict".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                outputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
                 runner: Some("runner".into()),
                 prompt: None,
                 runs: vec![],
             }),
             TlItem::Stage(StageDecl {
                 name: "b".into(),
-                inputs: vec![ArtifactDecl { name: "verdict".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -512,7 +527,7 @@ mod tests {
             mk_stage("b", "runner", &[("score", ArtifactKind::Value)]),
             TlItem::Stage(StageDecl {
                 name: "c".into(),
-                inputs: vec![ArtifactDecl { name: "score".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "score".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -548,7 +563,7 @@ mod tests {
             mk_stage("a", "runner", &[("note", ArtifactKind::Value)]),
             TlItem::Stage(StageDecl {
                 name: "b".into(),
-                inputs: vec![ArtifactDecl { name: "note".into(), optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "note".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -573,5 +588,47 @@ mod tests {
 
         // b.note exists directly — should not fall through to history
         assert_eq!(result["note"], "own-output");
+    }
+
+    #[test]
+    fn test_stage_input_qualified_source_direct_lookup() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("classify", "runner", &[("lang", ArtifactKind::Value)]),
+            mk_stage("revise",   "runner", &[("lang", ArtifactKind::Value)]),
+            TlItem::Stage(StageDecl {
+                name: "analyze".into(),
+                inputs: vec![ArtifactDecl {
+                    name: "lang".into(),
+                    source: Some("classify".into()),  // explicit: always use classify.lang
+                    optional: false,
+                    kind: ArtifactKind::Value,
+                    seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("runner".into()),
+                prompt: None,
+                runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(),
+                inputs: vec![],
+                start: "classify".into(),
+                routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+
+        rt.state.artifacts.set_ref("classify.lang", "python");
+        rt.state.artifacts.set_ref("revise.lang", "rust");  // newer in history
+        rt.state.history = vec!["classify".to_string(), "revise".to_string()];
+
+        let stages = rt.stages();
+        let stage_analyze = stages.get("analyze").unwrap();
+        let result = rt.stage_input_artifacts(stage_analyze, &rt.state.artifacts.clone());
+
+        // Explicit source: should use classify.lang, not revise.lang (even though revise is newer)
+        assert_eq!(result["lang"], "python");
     }
 }

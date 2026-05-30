@@ -11,6 +11,8 @@ pub enum ValidationError {
     UnknownStage(String),
     #[error("route predicate references unknown artifact '{stage}.{artifact}'")]
     UnknownArtifact { stage: String, artifact: String },
+    #[error("stage '{stage}' input '{input}' references unknown source stage '{from_stage}'")]
+    UnknownSourceStage { stage: String, input: String, from_stage: String },
     #[error("parallel fan-out for stage '{0}' has no matching fan-in route")]
     UnpairedFanOut(String),
     #[error("concurrency limit must be >= 1 in fan-out for stage '{0}'")]
@@ -91,7 +93,7 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
         }
     }
 
-    // Second pass: validate stage runner refs and run block runner refs
+    // Second pass: validate stage runner refs, run block runner refs, and explicit artifact sources
     for item in items {
         if let TlItem::Stage(s) = item {
             if let Some(r) = &s.runner {
@@ -100,6 +102,17 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                         stage: s.name.clone(),
                         runner: r.clone(),
                     });
+                }
+            }
+            for input in &s.inputs {
+                if let Some(src) = &input.source {
+                    if !stage_names.contains(src) {
+                        errors.push(ValidationError::UnknownSourceStage {
+                            stage: s.name.clone(),
+                            input: input.name.clone(),
+                            from_stage: src.clone(),
+                        });
+                    }
                 }
             }
             for run in &s.runs {
@@ -234,6 +247,7 @@ mod tests {
             inputs: vec![],
             outputs: outputs.iter().map(|o| ArtifactDecl {
                 name: o.to_string(),
+                source: None,
                 optional: false,
                 kind: ArtifactKind::Value,
                 seed_path: None,
@@ -502,5 +516,30 @@ mod tests {
         ];
         let result = validate(&items);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn test_unknown_source_stage_error() {
+        let items = vec![
+            runner("r"),
+            TlItem::Stage(StageDecl {
+                name: "b".to_string(),
+                inputs: vec![ArtifactDecl {
+                    name: "result".to_string(),
+                    source: Some("ghost-stage".to_string()),
+                    optional: false,
+                    kind: ArtifactKind::Value,
+                    seed_path: None,
+                }],
+                outputs: vec![],
+                runner: Some("r".to_string()),
+                prompt: None,
+                runs: vec![],
+            }),
+            pipeline("p", "b", vec![]),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.iter().any(|e| matches!(e,
+            ValidationError::UnknownSourceStage { from_stage, .. } if from_stage == "ghost-stage")));
     }
 }
