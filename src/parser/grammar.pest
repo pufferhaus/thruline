@@ -1,0 +1,63 @@
+// src/parser/grammar.pest
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Primitives
+identifier  = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
+model_id    = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-" | ".")* }
+quoted_str  = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+pos_int     = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+float_val   = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string_val  =  { quoted_str | model_id }
+
+// Prompt/file sources
+file_ref    =  { "file" ~ "(" ~ quoted_str ~ ")" }
+prompt_val  =  { file_ref | quoted_str }
+
+// Artifact declarations
+artifact_kind = { "file" | "ref" }
+seed_init     = { "(" ~ quoted_str ~ ")" }
+artifact_decl = { identifier ~ "?"? ~ "as" ~ artifact_kind ~ seed_init? }
+
+// ── Runner ────────────────────────────────────────────────────────────────
+tools_list   = { "[" ~ (identifier ~ ("," ~ identifier)*)? ~ "]" }
+runner_model = { "model" ~ ":" ~ string_val }
+runner_sys   = { "system" ~ ":" ~ prompt_val }
+runner_tools = { "tools" ~ ":" ~ tools_list }
+runner_temp  = { "temperature" ~ ":" ~ float_val }
+runner_maxt  = { "max_tokens" ~ ":" ~ pos_int }
+runner_field = { runner_model | runner_sys | runner_tools | runner_temp | runner_maxt }
+runner_decl  = { "runner" ~ identifier ~ "{" ~ runner_field* ~ "}" }
+
+// ── Stage ─────────────────────────────────────────────────────────────────
+stage_in     = { "in" ~ ":" ~ artifact_decl+ }
+stage_out    = { "out" ~ ":" ~ artifact_decl+ }
+stage_agent  = { "agent" ~ ":" ~ identifier }
+stage_prompt = { "prompt" ~ ":" ~ prompt_val }
+stage_format = { "format" ~ ":" ~ identifier }
+stage_field  = { stage_in | stage_out | stage_agent | stage_prompt | stage_format }
+stage_decl   = { "stage" ~ identifier ~ "{" ~ stage_field* ~ "}" }
+
+// ── Routes ────────────────────────────────────────────────────────────────
+cmp_op       = { "==" | "!=" }
+predicate    = { identifier ~ "." ~ identifier ~ cmp_op ~ quoted_str }
+fan_in_src   = { identifier ~ "[*]" }
+stage_src    = { identifier }
+route_source = { predicate | fan_in_src | stage_src }
+
+fan_out_spec = { "[*" ~ pos_int? ~ "]" }
+stage_target = { identifier ~ fan_out_spec? }
+route        = { route_source ~ "->" ~ stage_target ~ "parallel"? }
+
+// ── Pipeline ──────────────────────────────────────────────────────────────
+pipe_start    = { "start" ~ ":" ~ identifier }
+routes_block  = { "routes" ~ "{" ~ route* ~ "}" }
+pipeline_decl = { "pipeline" ~ identifier ~ "{" ~ pipe_start ~ routes_block ~ "}" }
+
+// ── Import ────────────────────────────────────────────────────────────────
+import_decl  = { "import" ~ quoted_str }
+
+// ── Top-level ─────────────────────────────────────────────────────────────
+tl_item = _{ import_decl | runner_decl | stage_decl | pipeline_decl }
+tl_file =  { SOI ~ tl_item* ~ EOI }
