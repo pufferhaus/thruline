@@ -222,6 +222,35 @@ fn test_pipeline_done_includes_value_artifacts() {
 }
 
 #[test]
+fn test_resume_emits_stage_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    let run_out = thruline()
+        .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
+        .output().unwrap();
+    let run_id = serde_json::from_str::<serde_json::Value>(
+        String::from_utf8_lossy(&run_out.stdout).lines().next().unwrap()
+    ).unwrap()["run_id"].as_str().unwrap().to_string();
+
+    let resume_out = thruline()
+        .args(["resume", &run_id, "--stage", "a", "--artifact", "verdict=ok"])
+        .output().unwrap();
+    let resume_stdout = String::from_utf8_lossy(&resume_out.stdout);
+
+    assert!(
+        resume_stdout.contains(r#""event":"stage_complete""#),
+        "stage_complete not emitted: {}", resume_stdout
+    );
+    let complete: serde_json::Value = resume_stdout.lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .find(|v: &serde_json::Value| v["event"] == "stage_complete")
+        .expect("no stage_complete");
+    assert_eq!(complete["stage"], "a");
+    assert_eq!(complete["outputs"]["verdict"], "ok");
+}
+
+#[test]
 fn test_api_driver_no_key_does_not_emit_pipeline_start() {
     let dir = tempfile::tempdir().unwrap();
     let tl = write_tl(dir.path(), "test.line", BASIC_TL);

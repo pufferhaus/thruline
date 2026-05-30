@@ -373,11 +373,30 @@ pub async fn cmd_resume(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    runtime.resume_stage(stage_name, outputs)?;
+    if let Err(e) = runtime.resume_stage(stage_name, outputs) {
+        crate::events::ThrulineEvent::StageError {
+            run_id: run_id.to_string(),
+            ts: chrono::Utc::now(),
+            stage: stage_name.to_string(),
+            error: e.to_string(),
+        }
+        .emit();
+        return Err(e);
+    }
 
     if matches!(runtime.state.status, RunStatus::AwaitingResume { .. }) {
         let driver = crate::driver::stdio::StdioDriver;
-        runtime.advance(&driver).await?;
+        if let Err(e) = runtime.advance(&driver).await {
+            crate::events::ThrulineEvent::PipelineError {
+                run_id: run_id.to_string(),
+                ts: chrono::Utc::now(),
+                stage: runtime.state.history.last()
+                    .cloned().unwrap_or_else(|| "unknown".to_string()),
+                error: e.to_string(),
+            }
+            .emit();
+            return Err(e);
+        }
     }
 
     Ok(())

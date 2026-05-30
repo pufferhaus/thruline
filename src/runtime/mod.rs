@@ -295,6 +295,19 @@ impl Runtime {
             ),
         }
 
+        {
+            let outputs_json: serde_json::Map<String, serde_json::Value> = outputs.iter()
+                .map(|(k, v, _)| (k.clone(), serde_json::Value::String(v.clone())))
+                .collect();
+            ThrulineEvent::StageComplete {
+                run_id: self.state.run_id.clone(),
+                ts: chrono::Utc::now(),
+                stage: stage_name.to_string(),
+                outputs: serde_json::Value::Object(outputs_json),
+            }
+            .emit();
+        }
+
         for (name, value, is_file) in outputs {
             let key = format!("{}.{}", stage_name, name);
             if is_file {
