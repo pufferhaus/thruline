@@ -2,6 +2,12 @@
 name = "thruline"
 version = "0.1.0"
 edition = "2021"
+description = "Minimal DSL and runtime for deterministic multiagent pipelines"
+license = "MIT"
+repository = "https://github.com/pufferhaus/thruline"
+homepage = "https://thruline.work"
+keywords = ["ai", "llm", "agents", "pipeline", "workflow"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "thruline"
