@@ -321,6 +321,17 @@ impl Runtime {
             // instead of single AwaitingResume. ParallelStart/ParallelSlotOpen/
             // ParallelDone events and RunStatus::ParallelAwait are defined but
             // not yet wired here.
+            if route.target.parallel_spec.is_some() {
+                let limit_str = route.target.parallel_spec.as_ref()
+                    .and_then(|s| s.limit)
+                    .map(|l| l.to_string())
+                    .unwrap_or_default();
+                eprintln!(
+                    "warning: run {}: route {} -> {}[*{}] is a fan-out — \
+                     parallel execution not yet implemented, running as single sequential invocation",
+                    self.state.run_id, stage_name, next_stage, limit_str
+                );
+            }
             let predicate_desc = format_route_source(&route.source);
             ThrulineEvent::RouteTaken {
                 run_id: self.state.run_id.clone(),
@@ -700,5 +711,38 @@ mod tests {
             }),
             r#"a.v != "rejected""#
         );
+    }
+
+    #[test]
+    fn test_fan_out_route_falls_through_with_no_panic() {
+        let state = RunState::new("r".into(), "p3".into(), "/tmp/t.line".into());
+        let items = vec![
+            mk_runner("r"),
+            mk_stage("a", "r", &[]),
+            mk_stage("b", "r", &[]),
+            mk_stage("c", "r", &[]),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p3".into(),
+                inputs: vec![],
+                start: "a".into(),
+                routes: vec![
+                    Route {
+                        source: RouteSource::Stage("a".into()),
+                        target: RouteTarget {
+                            stage: "b".into(),
+                            parallel_spec: Some(ParallelSpec { limit: Some(2) }),
+                        },
+                    },
+                    Route {
+                        source: RouteSource::FanIn("b".into()),
+                        target: RouteTarget { stage: "c".into(), parallel_spec: None },
+                    },
+                ],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into() };
+        rt.resume_stage("a", vec![]).unwrap();
+        assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage } if stage == "b"));
     }
 }
