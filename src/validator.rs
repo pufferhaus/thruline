@@ -17,8 +17,6 @@ pub enum ValidationError {
     UnpairedFanOut(String),
     #[error("concurrency limit must be >= 1 in fan-out for stage '{0}'")]
     InvalidConcurrencyLimit(String),
-    #[error("circular import: {0}")]
-    CircularImport(String),
     #[error("duplicate name '{0}'")]
     DuplicateName(String),
     #[error("duplicate config block — only one config block allowed per file")]

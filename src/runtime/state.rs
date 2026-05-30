@@ -47,10 +47,6 @@ impl RunState {
         self.run_dir().join("state.json")
     }
 
-    pub fn events_path(&self) -> PathBuf {
-        self.run_dir().join("events.ndjson")
-    }
-
     pub fn artifacts_dir(&self) -> PathBuf {
         self.run_dir().join("artifacts")
     }

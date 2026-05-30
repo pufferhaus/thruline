@@ -21,7 +21,7 @@ import "path/to/other.line"
 import "shared/runners.line"
 ```
 
-Resolved relative to the importing file. All declarations merge into the current namespace. Imports deduplicate by canonical path — importing the same file twice is safe. Circular imports are detected and rejected.
+Resolved relative to the importing file. All declarations merge into the current namespace. Imports deduplicate by canonical path — importing the same file twice is safe. Circular references terminate naturally through path deduplication.
 
 ---
 
@@ -272,8 +272,6 @@ Routes are evaluated in declaration order; the first match wins. An unconditiona
 | `stage-name[*]` | Fan-out — unlimited parallel copies |
 | `stage-name[*N]` | Fan-out — max N concurrent copies |
 
-The `parallel` keyword is required on any route targeting `[*N]`.
-
 #### Example
 
 ```
@@ -282,7 +280,7 @@ pipeline feature-dev {
   routes {
     interview.verdict == "rejected" -> interview   // retry loop
     interview.verdict == "approved" -> review
-    review -> implement[*3] parallel               // fan-out, max 3
+    review -> implement[*3]                        // fan-out, max 3
     implement[*] -> summarize                      // fan-in
   }
 }
