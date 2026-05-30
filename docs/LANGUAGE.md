@@ -250,7 +250,7 @@ pipeline <name> {
 ### Routes
 
 ```
-<source> -> <target>[<fan-out>] [parallel]
+<source> -> <target>[<fan-out>]
 ```
 
 #### Source forms
