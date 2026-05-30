@@ -1,6 +1,6 @@
 # Thruline Language Reference
 
-A `.line` file describes a deterministic multiagent workflow. It contains four kinds of declarations — `import`, `runner`, `stage`, and `pipeline` — in any order, at the top level.
+A `.line` file describes a deterministic multiagent workflow. It contains five kinds of declarations — `import`, `config`, `runner`, `stage`, and `pipeline` — in any order, at the top level.
 
 ---
 
@@ -21,7 +21,35 @@ import "path/to/other.line"
 import "shared/runners.line"
 ```
 
-Imports are resolved relative to the importing file. All declarations in the imported file are merged into the current namespace. Imports deduplicate by canonical path — importing the same file twice is safe. Circular imports are detected and rejected.
+Resolved relative to the importing file. All declarations merge into the current namespace. Imports deduplicate by canonical path — importing the same file twice is safe. Circular imports are detected and rejected.
+
+---
+
+## Config
+
+An optional file-level block that sets defaults for the whole pipeline. At most one `config` block is allowed per file (including imported files — duplicate config across files is an error).
+
+```
+config {
+  model: <model-id>
+}
+```
+
+| Field | Notes |
+|---|---|
+| `model` | Default model for any runner that doesn't declare one. Used by the api driver. |
+
+**Example:**
+
+```
+config {
+  model: claude-sonnet-4-6
+}
+```
+
+Model resolution order for the **api driver**: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
+
+The stdio driver passes the runner spec as-is to the harness; model resolution is the harness's responsibility.
 
 ---
 
@@ -32,22 +60,24 @@ A `runner` defines a reusable agent configuration. All fields are optional. Stag
 ```
 runner <name> {
   model:       <model-id>
-  system:      "<inline prompt>" | file("<path>")
+  system:      "<inline text>" | file("<path>")
   tools:       [tool1, tool2]
   temperature: <float>
   max_tokens:  <int>
 }
 ```
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `model` | string | harness default | Model identifier, e.g. `claude-sonnet-4-6`. When absent, the harness or driver picks the model. |
-| `system` | string or file ref | harness default | Inline text or `file("path/to/prompt.md")` relative to the `.line` file. When absent, the harness uses its own system prompt. |
-| `tools` | list of identifiers | `[]` | Tool names granted to this runner. |
-| `temperature` | float | — | Sampling temperature. |
-| `max_tokens` | int | — | Max output tokens. |
+| Field | Default | Notes |
+|---|---|---|
+| `model` | `config.model` or harness default | Model identifier, e.g. `claude-sonnet-4-6` |
+| `system` | harness default | Inline text or `file("path")` relative to the `.line` file. When absent, the harness uses its own system prompt. |
+| `tools` | `[]` | Tool names granted to this runner |
+| `temperature` | — | Sampling temperature |
+| `max_tokens` | — | Max output tokens |
 
-A runner with no fields is valid — it acts as a named alias for the harness's defaults:
+> **String literals** do not support escape sequences. A `"` character cannot appear inside an inline string — use `file("path")` for system prompts that contain quotes or special characters.
+
+A runner with no fields is valid — it is a named alias for the harness's defaults:
 
 ```
 runner default {}
@@ -65,8 +95,13 @@ runner analyst {
   max_tokens: 8192
 }
 
-// Minimal — harness picks model and system prompt
-runner light {}
+// Inherits model from config block
+runner light {
+  system: file("prompts/light.md")
+}
+
+// All defaults
+runner passthrough {}
 ```
 
 ---
@@ -80,20 +115,23 @@ stage <name> {
   in:     <artifact-decl>+
   out:    <artifact-decl>+
   runner: <runner-name>
-  prompt: "<inline prompt>" | file("<path>")
+  prompt: "<inline text>" | file("<path>")
   format: <identifier>
+  run <name> { ... }
+  ...
 }
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `runner` | no | References a declared `runner`. When absent, the stage uses harness defaults — no model or system prompt override. |
-| `in` | no | Input artifacts consumed by this stage. |
-| `out` | no | Output artifacts produced by this stage. |
-| `prompt` | no | Task-level prompt passed alongside the system prompt. |
-| `format` | no | Output format hint (currently parsed but not enforced — see Feature Gaps). |
+| Field | Notes |
+|---|---|
+| `runner` | References a declared `runner`. When absent, the stage uses harness defaults. When `run` blocks are present, acts as the default runner for runs that don't declare their own. |
+| `in` | Input artifacts consumed by this stage |
+| `out` | Output artifacts produced by this stage |
+| `prompt` | Task-level prompt passed alongside the system prompt |
+| `format` | Output format hint (parsed but not enforced — see Feature Gaps) |
+| `run` | Named parallel invocation (see below) |
 
-A bare stage with no fields is valid:
+A bare stage is valid:
 
 ```
 stage checkpoint {}
@@ -125,10 +163,48 @@ stage interview {
 }
 
 stage notify {
-  // no runner: harness drives this with its own defaults
-  prompt: "Summarize results and notify the team."
+  prompt: "Summarize and notify."
 }
 ```
+
+### Run Blocks
+
+A `run` block declares a named parallel invocation inside a stage. When a stage contains `run` blocks, all runs execute simultaneously. Each run has its own runner, prompt, and outputs. Outputs are scoped to the stage namespace (`stage.artifact`).
+
+```
+stage <name> {
+  runner: <default-runner>   // optional — fallback for runs without their own runner
+  run <name> {
+    runner: <runner-name>    // optional — overrides stage default
+    prompt: "<text>" | file("<path>")
+    out:    <artifact-decl>+
+  }
+  run <name> { ... }
+}
+```
+
+The stage-level `runner:` field acts as the default runner for any `run` block that doesn't specify one. A `run` block's `runner:` overrides it.
+
+**Example:**
+
+```
+stage dual-review {
+  runner: analyst            // default for runs without their own runner
+  run quality {
+    prompt: "Assess correctness and completeness."
+    out: verdict as ref
+         notes   as ref
+  }
+  run risk {
+    runner: critic           // overrides the stage default
+    prompt: "Identify risks and failure modes."
+    out: risks    as ref
+         severity as ref
+  }
+}
+```
+
+> **Runtime note:** `run` blocks are parsed and validated but not yet executed at runtime. The parallel execution path is in development (same status as fan-out). `thruline validate` and `thruline inspect` both fully support them.
 
 ---
 
@@ -148,8 +224,6 @@ pipeline <name> {
 
 ### Routes
 
-Each route is one line:
-
 ```
 <source> -> <target>[<fan-out>] [parallel]
 ```
@@ -159,11 +233,11 @@ Each route is one line:
 | Form | Meaning |
 |---|---|
 | `stage-name` | Unconditional — fires after this stage completes |
-| `stage.artifact == "value"` | Predicate — fires if the named ref artifact equals the value |
-| `stage.artifact != "value"` | Predicate — fires if the named ref artifact does not equal the value |
+| `stage.artifact == "value"` | Predicate — fires if the named ref artifact equals value |
+| `stage.artifact != "value"` | Predicate — fires if the named ref artifact does not equal value |
 | `stage-name[*]` | Fan-in — fires after all parallel slots of this stage complete |
 
-Routes are evaluated in declaration order; the first match wins. An unconditional route placed last acts as a default/fallthrough.
+Routes are evaluated in declaration order; the first match wins. An unconditional route placed last acts as a fallthrough.
 
 #### Target forms
 
@@ -173,33 +247,18 @@ Routes are evaluated in declaration order; the first match wins. An unconditiona
 | `stage-name[*]` | Fan-out — unlimited parallel copies |
 | `stage-name[*N]` | Fan-out — max N concurrent copies |
 
-The `parallel` keyword is required on any route targeting a `[*N]` fan-out.
+The `parallel` keyword is required on any route targeting `[*N]`.
 
-#### Examples
+#### Example
 
 ```
 pipeline feature-dev {
   start: interview
   routes {
-    // Retry loop — back-edge
-    interview.verdict == "rejected" -> interview
-
-    // Conditional advance
+    interview.verdict == "rejected" -> interview   // retry loop
     interview.verdict == "approved" -> review
-
-    // Fan-out with concurrency limit
-    review -> implement[*3] parallel
-
-    // Fan-in: wait for all implement slots
-    implement[*] -> summarize
-  }
-}
-
-pipeline linear {
-  start: gather
-  routes {
-    gather -> analyze
-    analyze -> report
+    review -> implement[*3] parallel               // fan-out, max 3
+    implement[*] -> summarize                      // fan-in
   }
 }
 ```
@@ -213,73 +272,71 @@ thruline validate <file.line>                   # Parse and validate
 thruline inspect  <file.line>                   # Print pipeline graph and stages
 thruline run      <file.line>                   # Run with stdio driver (default)
 thruline run      <file.line> --driver api      # Run with direct API driver
-thruline run      <file.line> --pipeline <name> # Select pipeline by name
+thruline run      <file.line> --pipeline <name> # Select pipeline when multiple defined
 thruline runs                                   # List all runs
 thruline status   <run-id>                      # Show run state and artifacts
 thruline resume   <run-id> --stage <name> \
                   --artifact key=value \
-                  --artifact path=file:///abs/path/to/file
+                  --artifact path=file:///abs/path
 ```
 
 ---
 
 ## Execution Model
 
-Thruline uses a **checkpoint-and-resume** model. Two drivers are available:
+Thruline uses a **checkpoint-and-resume** model. Two drivers:
 
 ### stdio driver (harness mode)
 
-A harness (e.g. Claude Code) drives execution:
-
-1. `thruline run` emits a `pipeline_start` event then a `stage_invoke` event and exits
-2. Harness reads the event, invokes the agent, collects outputs
+1. `thruline run` emits `pipeline_start` + `stage_invoke` then exits
+2. Harness invokes the agent, collects outputs
 3. Harness calls `thruline resume` with artifact key=value pairs
-4. Runtime evaluates routes and emits the next `stage_invoke`, or `pipeline_done`
+4. Runtime evaluates routes and emits the next `stage_invoke` or `pipeline_done`
 
-State is persisted to `~/.thruline/runs/<run-id>/state.json` between steps, enabling resume after process death.
+State persists to `~/.thruline/runs/<run-id>/state.json`, enabling resume after process death.
 
 ### api driver (standalone mode)
 
-`thruline run --driver api` calls the Anthropic Messages API directly, driving the full pipeline without an external harness. Requires `ANTHROPIC_API_KEY`. When a stage's runner has no `model`, the api driver defaults to `claude-sonnet-4-6`.
+`thruline run --driver api` calls the Anthropic Messages API directly. Requires `ANTHROPIC_API_KEY`.
+
+Model resolution: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
 
 ---
 
 ## Event Protocol (NDJSON)
 
-Each event is one JSON line on stdout, tagged with `"event": "<type>"`. Optional fields are omitted when absent.
+Each event is one JSON line tagged `"event": "<type>"`. Optional fields are omitted.
 
 | Event | When emitted | Key fields |
 |---|---|---|
 | `pipeline_start` | Run begins | `run_id`, `pipeline` |
-| `stage_invoke` | Stage ready to execute | `stage`, `runner` (full spec), `artifacts`, `prompt` |
-| `stage_complete` | Stage finished | `stage`, `outputs` |
+| `stage_invoke` | Stage ready | `stage`, `runner`, `artifacts`, `prompt` |
+| `stage_complete` | Stage done | `stage`, `outputs` |
 | `stage_error` | Stage failed | `stage`, `error` |
-| `route_taken` | A route matched | `from`, `to`, `predicate` |
+| `route_taken` | Route matched | `from`, `to`, `predicate` |
 | `parallel_start` | Fan-out begins | `stage`, `count`, `concurrency_limit` |
 | `parallel_slot_open` | One slot ready | `stage`, `slot`, `total` |
-| `parallel_done` | All slots complete | `stage`, `results` |
-| `pipeline_done` | Pipeline finished | `outputs` (file artifact paths) |
+| `parallel_done` | All slots done | `stage`, `results` |
+| `pipeline_done` | Pipeline finished | `outputs` |
 | `pipeline_error` | Pipeline failed | `stage`, `error` |
 
-### `stage_invoke` runner spec
-
-The `runner` field in `stage_invoke` contains:
+### Runner spec in `stage_invoke`
 
 ```json
 {
   "name": "analyst",
-  "model": "claude-opus-4-8",      // absent if not declared
-  "system": "You are an analyst.",  // absent if not declared
+  "model": "claude-opus-4-8",     // absent if not declared
+  "system": "You are an analyst.", // absent if not declared
   "tools": ["read_file"],
-  "temperature": 0.7               // absent if not declared
+  "temperature": 0.7              // absent if not declared
 }
 ```
 
-When `model` or `system` is absent, the harness uses its own defaults. Stages without a `runner:` declaration emit a minimal spec (`name: "default"`, no model or system) — the harness drives the agent entirely with its own configuration.
+Stages without `runner:` emit `name: "default"` with no model or system — harness uses its own defaults.
 
 ### Agent output protocol
 
-When driving a stage, the harness should instruct the agent to respond with a JSON object mapping output artifact names to values:
+Harnesses should instruct agents to respond with a JSON object:
 
 ```json
 {
@@ -288,7 +345,7 @@ When driving a stage, the harness should instruct the agent to respond with a JS
 }
 ```
 
-For `file` artifacts: write the file to disk, return the absolute path prefixed with `file://`. For `ref` artifacts: return the value as a plain string. Pass this back via `thruline resume --artifact key=value`.
+`file` artifacts: write to disk, return absolute path with `file://` prefix. `ref` artifacts: plain string value. Resume: `thruline resume --artifact key=value`.
 
 ---
 
@@ -296,42 +353,46 @@ For `file` artifacts: write the file to disk, return the absolute path prefixed 
 
 `thruline validate` checks:
 
-- All `runner:` references in stages resolve to a declared `runner`
-- All route source/target stages exist
-- All predicate artifacts are declared as outputs on the referenced stage
-- Every `[*N]` fan-out has a matching `[*]` fan-in in the same pipeline
-- Concurrency limits are ≥ 1
+- `runner:` references in stages and `run` blocks resolve to declared runners
+- Route source/target stages exist
+- Predicate artifacts declared as outputs on the referenced stage
+- Every `[*N]` fan-out has a matching `[*]` fan-in
+- Concurrency limits ≥ 1
 - No duplicate runner/stage/pipeline names
+- At most one `config` block per file
 
-Warnings (non-fatal):
-- Stages declared but not reachable from a pipeline's `start`
+Warnings: stages unreachable from a pipeline's `start`.
 
 ---
 
 ## Feature Gaps
 
-The following are defined in the grammar or AST but not yet fully implemented:
-
 **Parallel fan-out/fan-in** (`[*N]` / `[*]`)
-Grammar, AST, validator, and `Scheduler` struct all exist. At runtime, fan-out routes fall through to single sequential execution — the `Scheduler` is not wired into `resume_stage`. See `src/runtime/mod.rs` TODO.
+Parsed, validated, not executed — falls through to sequential. `Scheduler` struct exists but is not wired into `resume_stage`. See `src/runtime/mod.rs` TODO.
+
+**`run` blocks (parallel stage invocations)**
+Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — follows same parallel execution path as fan-out. See `src/runtime/mod.rs` TODO.
 
 **`format` field on stages**
-Parsed and stored in `StageDecl.format` but never acted on. No runtime semantics defined.
+Parsed, stored, never acted on. Semantics undefined.
 
 **Compound route predicates**
-Routes support `==` and `!=` against a single string value only. No `&&`, `||`, numeric comparisons, or range checks.
+`==` and `!=` against a single string only. No `&&`, `||`, numeric comparisons.
 
 **No pipeline-level inputs**
-No syntax to pass named inputs at `thruline run` time. Artifacts can only be pre-seeded via `seed_init` in stage declarations. There is no equivalent of function parameters for a pipeline.
+No syntax to pass named arguments at `thruline run` time. Pre-seeding via `seed_init` in artifact declarations is the only mechanism.
 
 **No retry limit**
-Back-edge routes create unbounded loops. No `max_retries`, `timeout`, or iteration cap.
+Back-edge routes create unbounded loops. No `max_retries` or timeout.
 
-**`system: file(...)` not validated at validate time**
-A `file("nonexistent.md")` system prompt passes validation and only fails at runtime when read.
+**`system: file(...)` unvalidated statically**
+Missing file paths pass `validate` and only fail at runtime.
 
 **Model string unvalidated**
-Any non-empty string is accepted as a model identifier. Typos produce runtime API errors, not static validation errors.
+Typos in model identifiers fail at API call time, not validate time.
+
+**No string escape sequences**
+Quoted strings terminate at the first `"` — backslash escaping is not supported. Use `file("path")` for system prompts containing quotes or special characters.
 
 **Identifier syntax allows `-`**
-Identifiers accept hyphens (`my-runner`, `feature-dev`). This can cause friction in contexts where artifact keys are used as JSON object keys, since hyphenated keys require quoting in most languages.
+Hyphens in identifiers (`my-runner`, `dual-review`) cause friction when artifact keys are used as JSON object keys, since hyphenated keys require quoting in most languages.
