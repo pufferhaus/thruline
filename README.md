@@ -6,51 +6,57 @@ You describe a workflow in a `.line` file — agents, what they produce, and how
 
 ```
 config {
-  model: claude-sonnet-4-6
+  model: claude-haiku-4-5-20251001
 }
 
 runner analyst {
-  system: file("prompts/analyst.md")
+  system: "You are a concise analyst. Respond ONLY with JSON."
   temperature: 0.3
 }
 
-stage classify {
-  out: language   as value
-       complexity as value
-  runner: analyst
-  prompt: "Classify the code snippet."
-}
-
-stage review {
-  in:  classify.language   as value
-       classify.complexity as value
-  out: verdict as value
-       notes   as value
-  runner: analyst
-  prompt: "Review code quality."
-}
-
-stage report {
-  in:  verdict as value
-  runner: analyst
-  out: summary as value
-}
-
-pipeline code-review {
+pipeline sentiment {
   inputs {
-    code as value
+    text as value
   }
   start: classify
   routes {
-    classify                        -> review
-    review.verdict == "approved"    -> report
-    review.verdict != "approved"    -> review   // retry
+    classify.sentiment == "positive" -> affirm
+    classify.sentiment != "positive" -> explain
   }
+}
+
+stage classify {
+  in:  text      as value
+  out: sentiment as value
+       notes     as value
+  runner: analyst
+  prompt: "Classify the sentiment of the provided text. Return JSON with sentiment and notes fields."
+}
+
+stage affirm {
+  in:  notes as value
+  out: reply as value
+  runner: analyst
+  prompt: "Write a brief affirming reply based on the notes."
+}
+
+stage explain {
+  in:  notes as value
+  out: reply as value
+  runner: analyst
+  prompt: "Write a brief explanatory reply based on the notes."
 }
 ```
 
-```
-thruline run pipeline.line --input code="def add(a, b): return a + b"
+```bash
+# Standalone — calls Anthropic API directly
+ANTHROPIC_API_KEY=sk-... thruline run pipeline.line --driver api --input text="I love Rust!"
+
+# Harness mode — harness drives the agents
+thruline run pipeline.line --input text="I love Rust!"
+# → emits stage_invoke JSON, then drive the agent and resume:
+thruline resume <run-id> --stage classify \
+  --artifact sentiment=positive --artifact notes="Enthusiastic tone."
 ```
 
 ---
@@ -186,6 +192,10 @@ cargo install --path .
 ```
 
 Requires Rust 1.70+.
+
+## Examples
+
+See [`examples/sentiment/`](examples/sentiment/) for a self-contained runnable pipeline.
 
 ---
 
