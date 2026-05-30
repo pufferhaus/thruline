@@ -263,6 +263,27 @@ impl Runtime {
         stage_name: &str,
         outputs: Vec<(String, String, bool)>,
     ) -> anyhow::Result<()> {
+        match &self.state.status {
+            RunStatus::AwaitingResume { stage } if stage == stage_name => {}
+            RunStatus::AwaitingResume { stage } => anyhow::bail!(
+                "run is awaiting stage '{}', cannot resume stage '{}'",
+                stage, stage_name
+            ),
+            RunStatus::Done => anyhow::bail!(
+                "run '{}' is already done", self.state.run_id
+            ),
+            RunStatus::Failed(e) => anyhow::bail!(
+                "run '{}' has failed: {}", self.state.run_id, e
+            ),
+            RunStatus::Running => anyhow::bail!(
+                "run '{}' has not reached a resume point yet", self.state.run_id
+            ),
+            RunStatus::ParallelAwait { stage, .. } => anyhow::bail!(
+                "run '{}' is in parallel await for stage '{}'; parallel resume not yet implemented",
+                self.state.run_id, stage
+            ),
+        }
+
         for (name, value, is_file) in outputs {
             let key = format!("{}.{}", stage_name, name);
             if is_file {
@@ -630,5 +651,21 @@ mod tests {
 
         // Explicit source: should use classify.lang, not revise.lang (even though revise is newer)
         assert_eq!(result["lang"], "python");
+    }
+
+    #[test]
+    fn test_resume_wrong_stage_errors() {
+        let mut rt = mk_runtime();
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into() };
+        let err = rt.resume_stage("b", vec![]).unwrap_err();
+        assert!(err.to_string().contains("awaiting stage 'a'"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_resume_done_run_errors() {
+        let mut rt = mk_runtime();
+        rt.state.status = RunStatus::Done;
+        let err = rt.resume_stage("a", vec![]).unwrap_err();
+        assert!(err.to_string().contains("already done"), "got: {}", err);
     }
 }
