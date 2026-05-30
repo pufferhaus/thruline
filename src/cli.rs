@@ -140,7 +140,8 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
     }
     for item in &items {
         if let TlItem::Stage(s) = item {
-            println!("stage: {}  (runner: {})", s.name, s.agent);
+            let runner_label = s.runner.as_deref().unwrap_or("default");
+            println!("stage: {}  (runner: {})", s.name, runner_label);
             for a in &s.outputs {
                 let kind = match a.kind {
                     crate::ast::ArtifactKind::File => "file",

@@ -34,10 +34,10 @@ runner_decl  = { "runner" ~ identifier ~ "{" ~ runner_field* ~ "}" }
 // ── Stage ─────────────────────────────────────────────────────────────────
 stage_in     = { "in" ~ ":" ~ artifact_decl+ }
 stage_out    = { "out" ~ ":" ~ artifact_decl+ }
-stage_agent  = { "agent" ~ ":" ~ identifier }
+stage_runner = { "runner" ~ ":" ~ identifier }
 stage_prompt = { "prompt" ~ ":" ~ prompt_val }
 stage_format = { "format" ~ ":" ~ identifier }
-stage_field  = { stage_in | stage_out | stage_agent | stage_prompt | stage_format }
+stage_field  = { stage_in | stage_out | stage_runner | stage_prompt | stage_format }
 stage_decl   = { "stage" ~ identifier ~ "{" ~ stage_field* ~ "}" }
 
 // ── Routes ────────────────────────────────────────────────────────────────

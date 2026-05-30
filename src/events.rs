@@ -6,7 +6,8 @@ pub struct RunnerSpec {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    pub system: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
     pub tools: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
@@ -116,7 +117,7 @@ mod tests {
             runner: RunnerSpec {
                 name: "interviewer".to_string(),
                 model: Some("claude-opus-4-8".to_string()),
-                system: "You are an interviewer.".to_string(),
+                system: Some("You are an interviewer.".to_string()),
                 tools: vec!["read_file".to_string()],
                 temperature: Some(0.7),
                 max_tokens: None,
@@ -134,7 +135,7 @@ mod tests {
         let runner = RunnerSpec {
             name: "r".to_string(),
             model: None,
-            system: "s".to_string(),
+            system: None,
             tools: vec![],
             temperature: None,
             max_tokens: None,
@@ -143,6 +144,7 @@ mod tests {
         assert!(!s.contains("temperature"));
         assert!(!s.contains("max_tokens"));
         assert!(!s.contains("model"));
+        assert!(!s.contains("system"));
     }
 
     #[test]

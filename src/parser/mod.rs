@@ -43,7 +43,7 @@ fn parse_runner(pair: Pair<Rule>) -> RunnerDecl {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut model = String::new();
-    let mut system = PromptSource::Inline(String::new());
+    let mut system: Option<PromptSource> = None;
     let mut tools = Vec::new();
     let mut temperature = None;
     let mut max_tokens = None;
@@ -59,7 +59,7 @@ fn parse_runner(pair: Pair<Rule>) -> RunnerDecl {
             }
             Rule::runner_sys => {
                 let pv = sub.into_inner().next().unwrap();
-                system = parse_prompt_val(pv);
+                system = Some(parse_prompt_val(pv));
             }
             Rule::runner_tools => {
                 let tl = sub.into_inner().next().unwrap(); // tools_list
@@ -82,7 +82,7 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
     let name = inner.next().unwrap().as_str().to_string();
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
-    let mut agent = String::new();
+    let mut runner: Option<String> = None;
     let mut prompt = None;
     let mut format = None;
 
@@ -96,8 +96,8 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
             Rule::stage_out => {
                 outputs = sub.into_inner().map(parse_artifact_decl).collect();
             }
-            Rule::stage_agent => {
-                agent = sub.into_inner().next().unwrap().as_str().to_string();
+            Rule::stage_runner => {
+                runner = Some(sub.into_inner().next().unwrap().as_str().to_string());
             }
             Rule::stage_prompt => {
                 let pv = sub.into_inner().next().unwrap();
@@ -109,7 +109,7 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
             _ => {}
         }
     }
-    StageDecl { name, inputs, outputs, agent, prompt, format }
+    StageDecl { name, inputs, outputs, runner, prompt, format }
 }
 
 fn parse_artifact_decl(pair: Pair<Rule>) -> ArtifactDecl {
@@ -255,7 +255,7 @@ runner my-runner {
         let TlItem::Runner(r) = &items[0] else { panic!("expected runner") };
         assert_eq!(r.name, "my-runner");
         assert_eq!(r.model, "claude-sonnet-4-6");
-        assert!(matches!(&r.system, PromptSource::Inline(s) if s == "You are helpful."));
+        assert!(matches!(&r.system, Some(PromptSource::Inline(s)) if s == "You are helpful."));
     }
 
     #[test]
@@ -271,7 +271,7 @@ runner eng-lead {
 "#;
         let items = parse_str(src).unwrap();
         let TlItem::Runner(r) = &items[0] else { panic!() };
-        assert!(matches!(&r.system, PromptSource::File(p) if p == "prompts/eng-lead.md"));
+        assert!(matches!(&r.system, Some(PromptSource::File(p)) if p == "prompts/eng-lead.md"));
         assert_eq!(r.tools, vec!["read_file", "write_file"]);
         assert_eq!(r.temperature, Some(0.7));
         assert_eq!(r.max_tokens, Some(4096));
@@ -284,7 +284,7 @@ stage interview {
   in: brief? as file("specs/brief.md")
   out: spec as file
        verdict as ref
-  agent: feature-interviewer
+  runner: feature-interviewer
   prompt: file("prompts/task.md")
 }
 "#;
@@ -301,7 +301,7 @@ stage interview {
         assert_eq!(s.outputs[0].kind, ArtifactKind::File);
         assert_eq!(s.outputs[1].name, "verdict");
         assert_eq!(s.outputs[1].kind, ArtifactKind::Ref);
-        assert_eq!(s.agent, "feature-interviewer");
+        assert_eq!(s.runner, Some("feature-interviewer".to_string()));
         assert!(matches!(&s.prompt, Some(PromptSource::File(p)) if p == "prompts/task.md"));
     }
 
@@ -365,7 +365,7 @@ runner r {
         let src = r#"
 import "other.line"
 runner r { model: claude-sonnet-4-6 system: "s" }
-stage a { agent: r }
+stage a { runner: r }
 pipeline p { start: a routes {} }
 "#;
         let items = parse_str(src).unwrap();

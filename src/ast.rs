@@ -12,7 +12,7 @@ pub enum TlItem {
 pub struct RunnerDecl {
     pub name: String,
     pub model: String,
-    pub system: PromptSource,
+    pub system: Option<PromptSource>,
     pub tools: Vec<String>,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
@@ -29,7 +29,7 @@ pub struct StageDecl {
     pub name: String,
     pub inputs: Vec<ArtifactDecl>,
     pub outputs: Vec<ArtifactDecl>,
-    pub agent: String,
+    pub runner: Option<String>,
     pub prompt: Option<PromptSource>,
     pub format: Option<String>,
 }

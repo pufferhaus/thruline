@@ -78,12 +78,13 @@ impl Runtime {
         base_path: &Path,
     ) -> anyhow::Result<RunnerSpec> {
         let system = match &runner.system {
-            PromptSource::Inline(s) => s.clone(),
-            PromptSource::File(rel) => {
+            None => None,
+            Some(PromptSource::Inline(s)) => Some(s.clone()),
+            Some(PromptSource::File(rel)) => {
                 let abs = base_path.parent().unwrap_or(Path::new(".")).join(rel);
-                std::fs::read_to_string(&abs).map_err(|_| {
+                Some(std::fs::read_to_string(&abs).map_err(|_| {
                     anyhow::anyhow!("system prompt file not found: {}", abs.display())
-                })?
+                })?)
             }
         };
         Ok(RunnerSpec {
@@ -141,13 +142,16 @@ impl Runtime {
             .get(&current_stage_name)
             .ok_or_else(|| anyhow::anyhow!("stage '{}' not found", current_stage_name))?;
 
-        let runners = self.runners();
-        let runner_decl = runners
-            .get(&stage.agent)
-            .ok_or_else(|| anyhow::anyhow!("runner '{}' not found", stage.agent))?;
-
         let tl_path = self.state.line_file.clone();
-        let runner_spec = self.resolve_runner(runner_decl, &tl_path)?;
+        let runner_spec = if let Some(runner_name) = &stage.runner {
+            let runners = self.runners();
+            let runner_decl = runners
+                .get(runner_name)
+                .ok_or_else(|| anyhow::anyhow!("runner '{}' not found", runner_name))?;
+            self.resolve_runner(runner_decl, &tl_path)?
+        } else {
+            RunnerSpec { name: "default".to_string(), model: None, system: None, tools: vec![], temperature: None, max_tokens: None }
+        };
         let input_artifacts = self.stage_input_artifacts(stage, &self.state.artifacts);
 
         let prompt = match &stage.prompt {
@@ -257,14 +261,14 @@ mod tests {
         TlItem::Runner(RunnerDecl {
             name: name.to_string(),
             model: "claude-sonnet-4-6".to_string(),
-            system: PromptSource::Inline("system prompt".to_string()),
+            system: Some(PromptSource::Inline("system prompt".to_string())),
             tools: vec![],
             temperature: None,
             max_tokens: None,
         })
     }
 
-    fn mk_stage(name: &str, agent: &str, outputs: &[(&str, ArtifactKind)]) -> TlItem {
+    fn mk_stage(name: &str, runner_name: &str, outputs: &[(&str, ArtifactKind)]) -> TlItem {
         TlItem::Stage(StageDecl {
             name: name.to_string(),
             inputs: vec![],
@@ -277,7 +281,7 @@ mod tests {
                     seed_path: None,
                 })
                 .collect(),
-            agent: agent.to_string(),
+            runner: Some(runner_name.to_string()),
             prompt: None,
             format: None,
         })
@@ -389,7 +393,7 @@ mod tests {
         let runner_decl = runners.get("runner").unwrap();
         let spec = rt.resolve_runner(runner_decl, Path::new("/tmp/test.line")).unwrap();
         assert_eq!(spec.model, Some("claude-sonnet-4-6".to_string()));
-        assert_eq!(spec.system, "system prompt");
+        assert_eq!(spec.system, Some("system prompt".to_string()));
     }
 
     #[test]

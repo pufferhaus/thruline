@@ -19,8 +19,6 @@ pub enum ValidationError {
     CircularImport(String),
     #[error("duplicate name '{0}'")]
     DuplicateName(String),
-    #[error("runner '{0}' is missing required field 'system'")]
-    MissingSystem(String),
 }
 
 #[derive(Debug)]
@@ -49,9 +47,6 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                 if !runner_names.insert(r.name.clone()) {
                     errors.push(ValidationError::DuplicateName(r.name.clone()));
                 }
-                if matches!(&r.system, PromptSource::Inline(s) if s.is_empty()) {
-                    errors.push(ValidationError::MissingSystem(r.name.clone()));
-                }
             }
             TlItem::Stage(s) => {
                 if !stage_names.insert(s.name.clone()) {
@@ -69,14 +64,16 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
         }
     }
 
-    // Second pass: validate stage agent refs
+    // Second pass: validate stage runner refs (only when runner is declared)
     for item in items {
         if let TlItem::Stage(s) = item {
-            if !runner_names.contains(&s.agent) {
-                errors.push(ValidationError::UnknownRunner {
-                    stage: s.name.clone(),
-                    runner: s.agent.clone(),
-                });
+            if let Some(r) = &s.runner {
+                if !runner_names.contains(r) {
+                    errors.push(ValidationError::UnknownRunner {
+                        stage: s.name.clone(),
+                        runner: r.clone(),
+                    });
+                }
             }
         }
     }
@@ -170,14 +167,14 @@ mod tests {
         TlItem::Runner(RunnerDecl {
             name: name.to_string(),
             model: "claude-sonnet-4-6".to_string(),
-            system: PromptSource::Inline("system".to_string()),
+            system: Some(PromptSource::Inline("system".to_string())),
             tools: vec![],
             temperature: None,
             max_tokens: None,
         })
     }
 
-    fn stage(name: &str, agent: &str, outputs: &[&str]) -> TlItem {
+    fn stage(name: &str, runner_name: &str, outputs: &[&str]) -> TlItem {
         TlItem::Stage(StageDecl {
             name: name.to_string(),
             inputs: vec![],
@@ -187,7 +184,7 @@ mod tests {
                 kind: ArtifactKind::Ref,
                 seed_path: None,
             }).collect(),
-            agent: agent.to_string(),
+            runner: Some(runner_name.to_string()),
             prompt: None,
             format: None,
         })
@@ -224,12 +221,29 @@ mod tests {
     #[test]
     fn test_unknown_runner() {
         let items = vec![
-            stage("a", "ghost", &[]),
+            stage("a", "ghost", &[]),  // references runner "ghost" which doesn't exist
             pipeline("p", "a", vec![]),
         ];
         let result = validate(&items);
         assert!(result.errors.iter().any(|e| matches!(e,
             ValidationError::UnknownRunner { runner, .. } if runner == "ghost")));
+    }
+
+    #[test]
+    fn test_stage_without_runner_is_valid() {
+        let items = vec![
+            TlItem::Stage(StageDecl {
+                name: "a".to_string(),
+                inputs: vec![],
+                outputs: vec![],
+                runner: None,
+                prompt: None,
+                format: None,
+            }),
+            pipeline("p", "a", vec![]),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
     }
 
     #[test]
@@ -325,7 +339,7 @@ mod tests {
         let items = vec![TlItem::Runner(RunnerDecl {
             name: "r".to_string(),
             model: "".to_string(),
-            system: PromptSource::Inline("sys".to_string()),
+            system: None,
             tools: vec![],
             temperature: None,
             max_tokens: None,

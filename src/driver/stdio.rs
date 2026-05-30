@@ -28,7 +28,7 @@ mod tests {
             runner: RunnerSpec {
                 name: "r".to_string(),
                 model: None,
-                system: "s".to_string(),
+                system: None,
                 tools: vec![],
                 temperature: None,
                 max_tokens: None,

@@ -23,7 +23,8 @@ impl ApiDriver {
 struct MessagesRequest {
     model: String,
     max_tokens: u32,
-    system: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
     messages: Vec<ApiMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
@@ -55,7 +56,7 @@ impl Driver for ApiDriver {
         let req = MessagesRequest {
             model: invocation.runner.model.clone().unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
             max_tokens: invocation.runner.max_tokens.unwrap_or(8096),
-            system: invocation.runner.system.clone(),
+            system: invocation.runner.system.clone(),  // None = harness default, omitted from API request
             messages: vec![ApiMessage {
                 role: "user".into(),
                 content: user_content,
@@ -190,7 +191,7 @@ mod tests {
             run_id: "r".to_string(),
             stage: "s".to_string(),
             runner: crate::events::RunnerSpec {
-                name: "r".to_string(), model: None, system: "s".to_string(),
+                name: "r".to_string(), model: None, system: Some("s".to_string()),
                 tools: vec![], temperature: None, max_tokens: None,
             },
             artifacts: serde_json::json!({"brief": "/tmp/brief.md"}),

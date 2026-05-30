@@ -19,10 +19,10 @@ runner r {
 }
 stage a {
   out: verdict as ref
-  agent: r
+  runner: r
 }
 stage b {
-  agent: r
+  runner: r
 }
 pipeline p {
   start: a
@@ -47,7 +47,7 @@ fn test_validate_unknown_runner_fails() {
     let dir = tempfile::tempdir().unwrap();
     let tl = write_tl(dir.path(), "bad.line", r#"
 stage a {
-  agent: ghost
+  runner: ghost
 }
 pipeline p {
   start: a
@@ -179,7 +179,7 @@ runner r {
     // Main file imports runners.line
     let tl = write_tl(dir.path(), "main.line", r#"
 import "runners.line"
-stage a { agent: r }
+stage a { runner: r }
 pipeline p {
   start: a
   routes {}
