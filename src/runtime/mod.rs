@@ -287,7 +287,6 @@ mod tests {
                 .collect(),
             runner: Some(runner_name.to_string()),
             prompt: None,
-            format: None,
             runs: vec![],
         })
     }

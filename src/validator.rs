@@ -208,7 +208,6 @@ mod tests {
             }).collect(),
             runner: Some(runner_name.to_string()),
             prompt: None,
-            format: None,
             runs: vec![],
         })
     }
@@ -261,7 +260,6 @@ mod tests {
                 outputs: vec![],
                 runner: None,
                 prompt: None,
-                format: None,
                 runs: vec![],
             }),
             pipeline("p", "a", vec![]),
@@ -442,7 +440,6 @@ mod tests {
                 outputs: vec![],
                 runner: Some("r".to_string()),
                 prompt: None,
-                format: None,
                 runs: vec![
                     RunDecl {
                         name: "fast".to_string(),
@@ -471,7 +468,6 @@ mod tests {
                 outputs: vec![],
                 runner: Some("analyst".to_string()),
                 prompt: None,
-                format: None,
                 runs: vec![
                     RunDecl { name: "fast".to_string(), runner: None, prompt: None, outputs: vec![] },
                     RunDecl { name: "deep".to_string(), runner: Some("critic".to_string()), prompt: None, outputs: vec![] },

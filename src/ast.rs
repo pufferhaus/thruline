@@ -45,7 +45,6 @@ pub struct StageDecl {
     pub outputs: Vec<ArtifactDecl>,
     pub runner: Option<String>,
     pub prompt: Option<PromptSource>,
-    pub format: Option<String>,
     pub runs: Vec<RunDecl>,
 }
 

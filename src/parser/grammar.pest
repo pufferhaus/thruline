@@ -43,8 +43,7 @@ stage_in     = { "in" ~ ":" ~ artifact_decl+ }
 stage_out    = { "out" ~ ":" ~ artifact_decl+ }
 stage_runner = { "runner" ~ ":" ~ identifier }
 stage_prompt = { "prompt" ~ ":" ~ prompt_val }
-stage_format = { "format" ~ ":" ~ identifier }
-stage_field  = { stage_in | stage_out | stage_runner | stage_prompt | stage_format | run_decl }
+stage_field  = { stage_in | stage_out | stage_runner | stage_prompt | run_decl }
 stage_decl   = { "stage" ~ identifier ~ "{" ~ stage_field* ~ "}" }
 
 // ── Routes ────────────────────────────────────────────────────────────────

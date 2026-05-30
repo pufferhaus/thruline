@@ -98,7 +98,6 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
     let mut outputs = Vec::new();
     let mut runner: Option<String> = None;
     let mut prompt = None;
-    let mut format = None;
     let mut runs = Vec::new();
 
     for field in inner {
@@ -118,16 +117,13 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
                 let pv = sub.into_inner().next().unwrap();
                 prompt = Some(parse_prompt_val(pv));
             }
-            Rule::stage_format => {
-                format = Some(sub.into_inner().next().unwrap().as_str().to_string());
-            }
             Rule::run_decl => {
                 runs.push(parse_run_decl(sub));
             }
             _ => {}
         }
     }
-    StageDecl { name, inputs, outputs, runner, prompt, format, runs }
+    StageDecl { name, inputs, outputs, runner, prompt, runs }
 }
 
 fn parse_run_decl(pair: Pair<Rule>) -> RunDecl {
