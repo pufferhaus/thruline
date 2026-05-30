@@ -17,6 +17,12 @@ pub struct RunnerSpec {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OutputDecl {
+    pub name: String,
+    pub kind: String,  // "value" or "path"
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ThrulineEvent {
     PipelineStart {
@@ -33,6 +39,8 @@ pub enum ThrulineEvent {
         artifacts: serde_json::Value,
         #[serde(skip_serializing_if = "Option::is_none")]
         prompt: Option<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        outputs: Vec<OutputDecl>,
     },
     StageComplete {
         run_id: String,
@@ -125,6 +133,7 @@ mod tests {
             },
             artifacts: serde_json::json!({}),
             prompt: None,
+            outputs: vec![],
         };
         let s = serde_json::to_string(&ev).unwrap();
         let back: ThrulineEvent = serde_json::from_str(&s).unwrap();

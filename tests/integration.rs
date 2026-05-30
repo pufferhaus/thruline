@@ -251,6 +251,28 @@ fn test_resume_emits_stage_complete() {
 }
 
 #[test]
+fn test_stage_invoke_includes_declared_outputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    let out = thruline()
+        .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
+        .output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    let invoke_line = stdout.lines()
+        .find(|l| l.contains(r#""event":"stage_invoke""#))
+        .expect("no stage_invoke");
+    let event: serde_json::Value = serde_json::from_str(invoke_line).unwrap();
+
+    // BASIC_TL stage a declares: out: verdict as value
+    let outputs = event["outputs"].as_array()
+        .expect("outputs field missing from stage_invoke");
+    assert_eq!(outputs[0]["name"], "verdict");
+    assert_eq!(outputs[0]["kind"], "value");
+}
+
+#[test]
 fn test_api_driver_no_key_does_not_emit_pipeline_start() {
     let dir = tempfile::tempdir().unwrap();
     let tl = write_tl(dir.path(), "test.line", BASIC_TL);

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::ast::*;
 use crate::driver::{AgentInvocation, Driver};
-use crate::events::{RunnerSpec, ThrulineEvent};
+use crate::events::{OutputDecl, RunnerSpec, ThrulineEvent};
 use crate::runtime::artifact::ArtifactStore;
 use crate::runtime::state::{RunState, RunStatus};
 
@@ -229,13 +229,24 @@ impl Runtime {
         } else {
             RunnerSpec { name: "default".to_string(), model: None, system: None, tools: vec![], temperature: None, max_tokens: None }
         };
+        let declared_outputs: Vec<OutputDecl> = stage.outputs.iter()
+            .map(|a| OutputDecl {
+                name: a.name.clone(),
+                kind: match a.kind {
+                    ArtifactKind::Path  => "path".to_string(),
+                    ArtifactKind::Value => "value".to_string(),
+                },
+            })
+            .collect();
         let input_artifacts = self.stage_input_artifacts(stage, &self.state.artifacts);
 
         let prompt = match &stage.prompt {
             Some(PromptSource::Inline(s)) => Some(s.clone()),
             Some(PromptSource::File(p)) => {
                 let abs = tl_path.parent().unwrap_or(Path::new(".")).join(p);
-                Some(std::fs::read_to_string(&abs)?)
+                Some(std::fs::read_to_string(&abs).map_err(|_| {
+                    anyhow::anyhow!("prompt file not found: {}", abs.display())
+                })?)
             }
             None => None,
         };
@@ -247,6 +258,7 @@ impl Runtime {
             runner: runner_spec.clone(),
             artifacts: input_artifacts.clone(),
             prompt: prompt.clone(),
+            outputs: declared_outputs,
         }
         .emit();
 
