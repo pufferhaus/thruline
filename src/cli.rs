@@ -306,22 +306,42 @@ pub async fn cmd_run(
     // Validate required pipeline inputs are present before first advance
     runtime.check_pipeline_inputs()?;
 
-    crate::events::ThrulineEvent::PipelineStart {
-        run_id: run_id.clone(),
-        ts: chrono::Utc::now(),
-        pipeline: pipeline.clone(),
-        inputs: serde_json::Value::Null,
-    }
-    .emit();
-
     match driver_name {
         "stdio" => {
+            crate::events::ThrulineEvent::PipelineStart {
+                run_id: run_id.clone(),
+                ts: chrono::Utc::now(),
+                pipeline: pipeline.clone(),
+                inputs: serde_json::Value::Null,
+            }.emit();
             let driver = crate::driver::stdio::StdioDriver;
-            runtime.advance(&driver).await?;
+            if let Err(e) = runtime.advance(&driver).await {
+                crate::events::ThrulineEvent::PipelineError {
+                    run_id: run_id.clone(),
+                    ts: chrono::Utc::now(),
+                    stage: runtime.state.history.last().cloned().unwrap_or_else(|| "unknown".to_string()),
+                    error: e.to_string(),
+                }.emit();
+                return Err(e);
+            }
         }
         "api" => {
             let driver = crate::driver::api::ApiDriver::from_env(config_model)?;
-            runtime.advance(&driver).await?;
+            crate::events::ThrulineEvent::PipelineStart {
+                run_id: run_id.clone(),
+                ts: chrono::Utc::now(),
+                pipeline: pipeline.clone(),
+                inputs: serde_json::Value::Null,
+            }.emit();
+            if let Err(e) = runtime.advance(&driver).await {
+                crate::events::ThrulineEvent::PipelineError {
+                    run_id: run_id.clone(),
+                    ts: chrono::Utc::now(),
+                    stage: runtime.state.history.last().cloned().unwrap_or_else(|| "unknown".to_string()),
+                    error: e.to_string(),
+                }.emit();
+                return Err(e);
+            }
         }
         other => anyhow::bail!("unknown driver '{}' \u{2014} use stdio or api", other),
     }

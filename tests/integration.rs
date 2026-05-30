@@ -220,3 +220,22 @@ fn test_pipeline_done_includes_value_artifacts() {
     assert!(outputs.is_object(), "outputs should be an object, got: {}", outputs);
     assert_eq!(outputs["a.verdict"], "ok", "a.verdict missing: {}", outputs);
 }
+
+#[test]
+fn test_api_driver_no_key_does_not_emit_pipeline_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    let out = thruline()
+        .args(["run", tl.to_str().unwrap(), "--driver", "api"])
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("THRULINE_DEFAULT_MODEL")
+        .output().unwrap();
+
+    assert!(!out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains(r#""event":"pipeline_start""#),
+        "pipeline_start emitted before key check: {}", stdout
+    );
+}
