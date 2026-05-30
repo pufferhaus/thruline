@@ -18,11 +18,60 @@ Invoke with a path to a `.line` file:
 ## How It Works
 
 1. Run `thruline run <file.line> --driver stdio` as a subprocess
-2. Read NDJSON events from stdout line by line
-3. On `stage_invoke` event — spawn the stage's agent using this harness's Agent tool, passing the runner spec and input artifacts
-4. Call `thruline resume <run-id> --stage <name> --artifact key=value [...]` with the agent's output
-5. Repeat until `pipeline_done` or `pipeline_error`
-6. Render live pipeline status after each event
+2. Parse `pipeline_start` — create one TaskCreate entry per stage in the pipeline
+3. Read subsequent NDJSON events and update the corresponding task via TaskUpdate as each stage changes state
+4. On `stage_invoke` — set the task to `in_progress`, then spawn the stage's agent using the Agent tool
+5. Call `thruline resume <run-id> --stage <name> --artifact key=value [...]` with the agent's output
+6. On route advance — update the task that just completed and the next one to `in_progress`
+7. Repeat until `pipeline_done` or `pipeline_error`
+
+## Pipeline Status via Tasks
+
+Use **TaskCreate** and **TaskUpdate** to maintain a live floating task list — one task per stage. This gives the user an updating panel rather than repeated status blocks.
+
+### At `pipeline_start`
+
+Create one task per stage declared in the pipeline (inspect the `.line` file or use `thruline inspect` to get the stage list):
+
+```
+TaskCreate: "[pipeline-name] stage-name"   status: pending
+```
+
+Name each task `[<pipeline>] <stage>  (<runner> / <model>)` if the runner info is available from the inspect output. Use `pending` status for all.
+
+### At `stage_invoke`
+
+Update the task for the invoking stage:
+
+```
+TaskUpdate: status → in_progress
+            description → "running — <artifact-name>: …"  (if prior outputs exist)
+```
+
+Then spawn the agent.
+
+### After agent completes and resume succeeds
+
+Update the completed stage task:
+
+```
+TaskUpdate: status → completed
+            description → "<artifact>: <value>, …"
+```
+
+If a `route_taken` event names the next stage, update that task to `in_progress`.
+
+### At `pipeline_done`
+
+Update any remaining `in_progress` task to `completed`. Write a single summary line to the conversation:
+
+```
+✓ pipeline_done  [run: <run-id>]  — <N> stages complete
+```
+
+### At `pipeline_error`
+
+Update the failing stage task to show the error. Write the error to the conversation and halt.
 
 ## Agent Output Protocol
 
@@ -40,39 +89,18 @@ When invoking a stage's agent, include these instructions in the prompt:
 > }
 > ```
 
-## Pipeline Status Display
+## Event Handling Summary
 
-After each event, output an updated status block. Use this format:
-
-```
-pipeline: <name>  [run: <run-id>]
-
-  ● <stage>  (<runner-name> / <model>)   ✓ complete
-  │  <artifact>: <value>, ...
-  ⟳ <stage>  (<runner-name> / <model>)   running
-  │
-  ○ <stage>  (<runner-name> / <model>)   pending
-  │
-  ○ <stage>[*N]  (<runner-name> / <model>)   pending  (parallel, max N)
-```
-
-Legend:
-- `●` = complete
-- `⟳` = currently running
-- `○` = pending
-
-## Event Handling
-
-| Event | Action |
-|-------|--------|
-| `pipeline_start` | Display pipeline name and run ID. Mark all stages pending. |
-| `stage_invoke` | Use Agent tool to invoke the runner. Pass system prompt, model, tools, artifacts, and task prompt from the event payload. |
-| `stage_complete` | Mark stage complete. Show output artifact values. |
-| `route_taken` | Note which route was followed. |
-| `parallel_start` | Note fan-out: N agents will be spawned for this stage. |
-| `parallel_done` | All parallel slots complete. |
-| `pipeline_done` | Display success. List output file paths. |
-| `pipeline_error` | Display error. Halt. |
+| Event | Task action | Conversation output |
+|-------|-------------|---------------------|
+| `pipeline_start` | Create one task per stage (pending) | None |
+| `stage_invoke` | Set stage task → in_progress | None (task panel shows it) |
+| `stage_complete` | Set stage task → completed with artifact values | None |
+| `route_taken` | — | None |
+| `parallel_start` | Set stage task description to "fan-out: N slots" | None |
+| `parallel_done` | Set stage task → completed | None |
+| `pipeline_done` | Set any open tasks → completed | `✓ pipeline_done [run: <id>]` |
+| `pipeline_error` | Set failing task description to error | Error message |
 
 ## Invoking the Stage Agent
 
