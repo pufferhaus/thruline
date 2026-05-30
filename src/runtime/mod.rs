@@ -215,6 +215,10 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
+            // TODO: if route.parallel is true, use Scheduler for fan-out/fan-in
+            // instead of single AwaitingResume. ParallelStart/ParallelSlotOpen/
+            // ParallelDone events and RunStatus::ParallelAwait are defined but
+            // not yet wired here.
             let predicate_desc = format!("{:?}", route.source);
             ThrulineEvent::RouteTaken {
                 run_id: self.state.run_id.clone(),
