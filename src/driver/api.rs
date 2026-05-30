@@ -5,17 +5,18 @@ use crate::driver::{AgentInvocation, AgentResult, Driver};
 
 pub struct ApiDriver {
     pub api_key: String,
+    pub default_model: Option<String>,
 }
 
 impl ApiDriver {
-    pub fn new(api_key: String) -> Self {
-        Self { api_key }
+    pub fn new(api_key: String, default_model: Option<String>) -> Self {
+        Self { api_key, default_model }
     }
 
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub fn from_env(default_model: Option<String>) -> anyhow::Result<Self> {
         let key = std::env::var("ANTHROPIC_API_KEY")
             .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY environment variable not set"))?;
-        Ok(Self::new(key))
+        Ok(Self::new(key, default_model))
     }
 }
 
@@ -53,8 +54,16 @@ impl Driver for ApiDriver {
     async fn invoke_agent(&self, invocation: AgentInvocation) -> anyhow::Result<AgentResult> {
         let user_content = build_user_message(&invocation);
 
+        let model = invocation.runner.model.clone()
+            .or_else(|| self.default_model.clone())
+            .or_else(|| std::env::var("THRULINE_DEFAULT_MODEL").ok())
+            .ok_or_else(|| anyhow::anyhow!(
+                "runner '{}' has no model — declare one in the runner, set config {{ model: ... }}, or set THRULINE_DEFAULT_MODEL",
+                invocation.runner.name
+            ))?;
+
         let req = MessagesRequest {
-            model: invocation.runner.model.clone().unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
+            model,
             max_tokens: invocation.runner.max_tokens.unwrap_or(8096),
             system: invocation.runner.system.clone(),  // None = harness default, omitted from API request
             messages: vec![ApiMessage {

@@ -142,6 +142,10 @@ impl Runtime {
             .get(&current_stage_name)
             .ok_or_else(|| anyhow::anyhow!("stage '{}' not found", current_stage_name))?;
 
+        // TODO: if !stage.runs.is_empty(), emit ParallelStart + one StageInvoke per run,
+        // save ParallelAwait state. Requires resume to accept --run <name> to identify
+        // which run is completing. Wiring mirrors fan-out parallel execution gap.
+
         let tl_path = self.state.line_file.clone();
         let runner_spec = if let Some(runner_name) = &stage.runner {
             let runners = self.runners();
@@ -284,6 +288,7 @@ mod tests {
             runner: Some(runner_name.to_string()),
             prompt: None,
             format: None,
+            runs: vec![],
         })
     }
 

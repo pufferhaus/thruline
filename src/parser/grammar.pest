@@ -31,13 +31,20 @@ runner_maxt  = { "max_tokens" ~ ":" ~ pos_int }
 runner_field = { runner_model | runner_sys | runner_tools | runner_temp | runner_maxt }
 runner_decl  = { "runner" ~ identifier ~ "{" ~ runner_field* ~ "}" }
 
+// ── Run (parallel invocations within a stage) ────────────────────────────
+run_runner = { "runner" ~ ":" ~ identifier }
+run_prompt = { "prompt" ~ ":" ~ prompt_val }
+run_out    = { "out" ~ ":" ~ artifact_decl+ }
+run_field  = { run_runner | run_prompt | run_out }
+run_decl   = { "run" ~ identifier ~ "{" ~ run_field* ~ "}" }
+
 // ── Stage ─────────────────────────────────────────────────────────────────
 stage_in     = { "in" ~ ":" ~ artifact_decl+ }
 stage_out    = { "out" ~ ":" ~ artifact_decl+ }
 stage_runner = { "runner" ~ ":" ~ identifier }
 stage_prompt = { "prompt" ~ ":" ~ prompt_val }
 stage_format = { "format" ~ ":" ~ identifier }
-stage_field  = { stage_in | stage_out | stage_runner | stage_prompt | stage_format }
+stage_field  = { stage_in | stage_out | stage_runner | stage_prompt | stage_format | run_decl }
 stage_decl   = { "stage" ~ identifier ~ "{" ~ stage_field* ~ "}" }
 
 // ── Routes ────────────────────────────────────────────────────────────────
@@ -60,6 +67,11 @@ pipeline_decl = { "pipeline" ~ identifier ~ "{" ~ pipe_start ~ routes_block ~ "}
 // ── Import ────────────────────────────────────────────────────────────────
 import_decl  = { "import" ~ quoted_str }
 
+// ── Config ────────────────────────────────────────────────────────────────
+config_model = { "model" ~ ":" ~ string_val }
+config_field = { config_model }
+config_decl  = { "config" ~ "{" ~ config_field* ~ "}" }
+
 // ── Top-level ─────────────────────────────────────────────────────────────
-line_item = _{ import_decl | runner_decl | stage_decl | pipeline_decl }
+line_item = _{ import_decl | config_decl | runner_decl | stage_decl | pipeline_decl }
 line_file =  { SOI ~ line_item* ~ EOI }

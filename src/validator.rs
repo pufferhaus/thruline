@@ -19,6 +19,10 @@ pub enum ValidationError {
     CircularImport(String),
     #[error("duplicate name '{0}'")]
     DuplicateName(String),
+    #[error("duplicate config block — only one config block allowed per file")]
+    DuplicateConfig,
+    #[error("stage '{stage}' run '{run}' references unknown runner '{runner}'")]
+    UnknownRunnerInRun { stage: String, run: String, runner: String },
 }
 
 #[derive(Debug)]
@@ -37,12 +41,19 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
     let mut runner_names: HashSet<String>  = HashSet::new();
     let mut stage_names:  HashSet<String>  = HashSet::new();
     let mut pipeline_names: HashSet<String> = HashSet::new();
+    let mut config_seen = false;
     // stage name -> set of output artifact names
     let mut stage_outputs: HashMap<String, HashSet<String>> = HashMap::new();
 
-    // First pass: build indexes, check duplicates, check required runner fields
+    // First pass: build indexes, check duplicates
     for item in items {
         match item {
+            TlItem::Config(_) => {
+                if config_seen {
+                    errors.push(ValidationError::DuplicateConfig);
+                }
+                config_seen = true;
+            }
             TlItem::Runner(r) => {
                 if !runner_names.insert(r.name.clone()) {
                     errors.push(ValidationError::DuplicateName(r.name.clone()));
@@ -64,7 +75,7 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
         }
     }
 
-    // Second pass: validate stage runner refs (only when runner is declared)
+    // Second pass: validate stage runner refs and run block runner refs
     for item in items {
         if let TlItem::Stage(s) = item {
             if let Some(r) = &s.runner {
@@ -73,6 +84,17 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                         stage: s.name.clone(),
                         runner: r.clone(),
                     });
+                }
+            }
+            for run in &s.runs {
+                if let Some(r) = &run.runner {
+                    if !runner_names.contains(r) {
+                        errors.push(ValidationError::UnknownRunnerInRun {
+                            stage: s.name.clone(),
+                            run: run.name.clone(),
+                            runner: r.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -187,6 +209,7 @@ mod tests {
             runner: Some(runner_name.to_string()),
             prompt: None,
             format: None,
+            runs: vec![],
         })
     }
 
@@ -239,6 +262,7 @@ mod tests {
                 runner: None,
                 prompt: None,
                 format: None,
+                runs: vec![],
             }),
             pipeline("p", "a", vec![]),
         ];
@@ -393,6 +417,67 @@ mod tests {
                     parallel: false,
                 },
             ]),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn test_duplicate_config_error() {
+        let items = vec![
+            TlItem::Config(ConfigDecl { model: Some("claude-sonnet-4-6".to_string()) }),
+            TlItem::Config(ConfigDecl { model: None }),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.iter().any(|e| matches!(e, ValidationError::DuplicateConfig)));
+    }
+
+    #[test]
+    fn test_run_block_unknown_runner() {
+        let items = vec![
+            runner("r"),
+            TlItem::Stage(StageDecl {
+                name: "a".to_string(),
+                inputs: vec![],
+                outputs: vec![],
+                runner: Some("r".to_string()),
+                prompt: None,
+                format: None,
+                runs: vec![
+                    RunDecl {
+                        name: "fast".to_string(),
+                        runner: Some("ghost".to_string()),
+                        prompt: None,
+                        outputs: vec![],
+                    },
+                ],
+            }),
+            pipeline("p", "a", vec![]),
+        ];
+        let result = validate(&items);
+        assert!(result.errors.iter().any(|e| matches!(e,
+            ValidationError::UnknownRunnerInRun { run, runner, .. }
+            if run == "fast" && runner == "ghost")));
+    }
+
+    #[test]
+    fn test_run_block_valid_runner_ref() {
+        let items = vec![
+            runner("analyst"),
+            runner("critic"),
+            TlItem::Stage(StageDecl {
+                name: "review".to_string(),
+                inputs: vec![],
+                outputs: vec![],
+                runner: Some("analyst".to_string()),
+                prompt: None,
+                format: None,
+                runs: vec![
+                    RunDecl { name: "fast".to_string(), runner: None, prompt: None, outputs: vec![] },
+                    RunDecl { name: "deep".to_string(), runner: Some("critic".to_string()), prompt: None, outputs: vec![] },
+                ],
+            }),
+            pipeline("p", "review", vec![]),
         ];
         let result = validate(&items);
         assert!(result.errors.is_empty(), "{:?}", result.errors);

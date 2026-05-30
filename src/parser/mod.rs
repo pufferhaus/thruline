@@ -24,6 +24,7 @@ pub fn parse_str(src: &str) -> anyhow::Result<Vec<TlItem>> {
     for pair in file.into_inner() {
         match pair.as_rule() {
             Rule::import_decl   => items.push(parse_import(pair)),
+            Rule::config_decl   => items.push(TlItem::Config(parse_config(pair))),
             Rule::runner_decl   => items.push(TlItem::Runner(parse_runner(pair))),
             Rule::stage_decl    => items.push(TlItem::Stage(parse_stage(pair))),
             Rule::pipeline_decl => items.push(TlItem::Pipeline(parse_pipeline(pair))),
@@ -37,6 +38,19 @@ pub fn parse_str(src: &str) -> anyhow::Result<Vec<TlItem>> {
 fn parse_import(pair: Pair<Rule>) -> TlItem {
     let path = unquote(pair.into_inner().next().unwrap().as_str());
     TlItem::Import(path)
+}
+
+fn parse_config(pair: Pair<Rule>) -> ConfigDecl {
+    let mut model = None;
+    for field in pair.into_inner() {
+        let mut fi = field.into_inner();
+        let sub = fi.next().unwrap();
+        if sub.as_rule() == Rule::config_model {
+            let sv = sub.into_inner().next().unwrap();
+            model = Some(parse_string_val(sv));
+        }
+    }
+    ConfigDecl { model }
 }
 
 fn parse_runner(pair: Pair<Rule>) -> RunnerDecl {
@@ -85,6 +99,7 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
     let mut runner: Option<String> = None;
     let mut prompt = None;
     let mut format = None;
+    let mut runs = Vec::new();
 
     for field in inner {
         let mut fi = field.into_inner();
@@ -106,10 +121,40 @@ fn parse_stage(pair: Pair<Rule>) -> StageDecl {
             Rule::stage_format => {
                 format = Some(sub.into_inner().next().unwrap().as_str().to_string());
             }
+            Rule::run_decl => {
+                runs.push(parse_run_decl(sub));
+            }
             _ => {}
         }
     }
-    StageDecl { name, inputs, outputs, runner, prompt, format }
+    StageDecl { name, inputs, outputs, runner, prompt, format, runs }
+}
+
+fn parse_run_decl(pair: Pair<Rule>) -> RunDecl {
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let mut runner = None;
+    let mut prompt = None;
+    let mut outputs = Vec::new();
+
+    for field in inner {
+        let mut fi = field.into_inner();
+        let sub = fi.next().unwrap();
+        match sub.as_rule() {
+            Rule::run_runner => {
+                runner = Some(sub.into_inner().next().unwrap().as_str().to_string());
+            }
+            Rule::run_prompt => {
+                let pv = sub.into_inner().next().unwrap();
+                prompt = Some(parse_prompt_val(pv));
+            }
+            Rule::run_out => {
+                outputs = sub.into_inner().map(parse_artifact_decl).collect();
+            }
+            _ => {}
+        }
+    }
+    RunDecl { name, runner, prompt, outputs }
 }
 
 fn parse_artifact_decl(pair: Pair<Rule>) -> ArtifactDecl {
@@ -391,5 +436,60 @@ pipeline p {
         assert!(matches!(&p.routes[0].source,
             RouteSource::Predicate { op, value, .. }
             if *op == CompareOp::Ne && value == "rejected"));
+    }
+
+    #[test]
+    fn test_parse_config_block() {
+        let src = r#"
+config {
+  model: claude-sonnet-4-6
+}
+"#;
+        let items = parse_str(src).unwrap();
+        assert_eq!(items.len(), 1);
+        let TlItem::Config(c) = &items[0] else { panic!("expected config") };
+        assert_eq!(c.model, Some("claude-sonnet-4-6".to_string()));
+    }
+
+    #[test]
+    fn test_parse_empty_config_block() {
+        let src = r#"config {}"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Config(c) = &items[0] else { panic!() };
+        assert_eq!(c.model, None);
+    }
+
+    #[test]
+    fn test_parse_stage_with_run_blocks() {
+        let src = r#"
+stage review {
+  runner: analyst
+  run fast {
+    prompt: "Quick check."
+    out: quick-verdict as ref
+  }
+  run thorough {
+    runner: critic
+    out: detailed-verdict as ref
+  }
+}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Stage(s) = &items[0] else { panic!() };
+        assert_eq!(s.name, "review");
+        assert_eq!(s.runner, Some("analyst".to_string()));
+        assert_eq!(s.runs.len(), 2);
+
+        let fast = &s.runs[0];
+        assert_eq!(fast.name, "fast");
+        assert_eq!(fast.runner, None);
+        assert!(matches!(&fast.prompt, Some(PromptSource::Inline(p)) if p == "Quick check."));
+        assert_eq!(fast.outputs.len(), 1);
+        assert_eq!(fast.outputs[0].name, "quick-verdict");
+
+        let thorough = &s.runs[1];
+        assert_eq!(thorough.name, "thorough");
+        assert_eq!(thorough.runner, Some("critic".to_string()));
+        assert_eq!(thorough.outputs[0].name, "detailed-verdict");
     }
 }

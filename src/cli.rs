@@ -140,8 +140,26 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
     }
     for item in &items {
         if let TlItem::Stage(s) = item {
-            let runner_label = s.runner.as_deref().unwrap_or("default");
-            println!("stage: {}  (runner: {})", s.name, runner_label);
+            if s.runs.is_empty() {
+                let runner_label = s.runner.as_deref().unwrap_or("default");
+                println!("stage: {}  (runner: {})", s.name, runner_label);
+            } else {
+                let default_label = s.runner.as_deref().map(|r| format!(", default runner: {}", r)).unwrap_or_default();
+                println!("stage: {}  (parallel runs{})", s.name, default_label);
+                for run in &s.runs {
+                    let run_runner = run.runner.as_deref()
+                        .or(s.runner.as_deref())
+                        .unwrap_or("default");
+                    println!("  run: {}  (runner: {})", run.name, run_runner);
+                    for a in &run.outputs {
+                        let kind = match a.kind {
+                            crate::ast::ArtifactKind::File => "file",
+                            crate::ast::ArtifactKind::Ref  => "ref",
+                        };
+                        println!("    out: {} as {}", a.name, kind);
+                    }
+                }
+            }
             for a in &s.outputs {
                 let kind = match a.kind {
                     crate::ast::ArtifactKind::File => "file",
@@ -244,6 +262,10 @@ pub async fn cmd_run(
     }
     .emit();
 
+    let config_model = items.iter().find_map(|i| {
+        if let TlItem::Config(c) = i { c.model.clone() } else { None }
+    });
+
     let mut runtime = Runtime::new(state, items);
 
     match driver_name {
@@ -252,7 +274,7 @@ pub async fn cmd_run(
             runtime.advance(&driver).await?;
         }
         "api" => {
-            let driver = crate::driver::api::ApiDriver::from_env()?;
+            let driver = crate::driver::api::ApiDriver::from_env(config_model)?;
             runtime.advance(&driver).await?;
         }
         other => anyhow::bail!("unknown driver '{}' \u{2014} use stdio or api", other),

@@ -3,9 +3,15 @@
 #[derive(Debug, Clone)]
 pub enum TlItem {
     Import(String),
+    Config(ConfigDecl),
     Runner(RunnerDecl),
     Stage(StageDecl),
     Pipeline(PipelineDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigDecl {
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +31,14 @@ pub enum PromptSource {
 }
 
 #[derive(Debug, Clone)]
+pub struct RunDecl {
+    pub name: String,
+    pub runner: Option<String>,
+    pub prompt: Option<PromptSource>,
+    pub outputs: Vec<ArtifactDecl>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StageDecl {
     pub name: String,
     pub inputs: Vec<ArtifactDecl>,
@@ -32,6 +46,7 @@ pub struct StageDecl {
     pub runner: Option<String>,
     pub prompt: Option<PromptSource>,
     pub format: Option<String>,
+    pub runs: Vec<RunDecl>,
 }
 
 #[derive(Debug, Clone)]
