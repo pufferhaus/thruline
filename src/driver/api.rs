@@ -53,7 +53,7 @@ impl Driver for ApiDriver {
         let user_content = build_user_message(&invocation);
 
         let req = MessagesRequest {
-            model: invocation.runner.model.clone(),
+            model: invocation.runner.model.clone().unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
             max_tokens: invocation.runner.max_tokens.unwrap_or(8096),
             system: invocation.runner.system.clone(),
             messages: vec![ApiMessage {
@@ -190,7 +190,7 @@ mod tests {
             run_id: "r".to_string(),
             stage: "s".to_string(),
             runner: crate::events::RunnerSpec {
-                name: "r".to_string(), model: "m".to_string(), system: "s".to_string(),
+                name: "r".to_string(), model: None, system: "s".to_string(),
                 tools: vec![], temperature: None, max_tokens: None,
             },
             artifacts: serde_json::json!({"brief": "/tmp/brief.md"}),

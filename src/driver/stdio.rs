@@ -27,7 +27,7 @@ mod tests {
             stage: "interview".to_string(),
             runner: RunnerSpec {
                 name: "r".to_string(),
-                model: "m".to_string(),
+                model: None,
                 system: "s".to_string(),
                 tools: vec![],
                 temperature: None,

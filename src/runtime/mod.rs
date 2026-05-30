@@ -88,7 +88,7 @@ impl Runtime {
         };
         Ok(RunnerSpec {
             name: runner.name.clone(),
-            model: runner.model.clone(),
+            model: if runner.model.is_empty() { None } else { Some(runner.model.clone()) },
             system,
             tools: runner.tools.clone(),
             temperature: runner.temperature,
@@ -388,7 +388,7 @@ mod tests {
         let runners = rt.runners();
         let runner_decl = runners.get("runner").unwrap();
         let spec = rt.resolve_runner(runner_decl, Path::new("/tmp/test.line")).unwrap();
-        assert_eq!(spec.model, "claude-sonnet-4-6");
+        assert_eq!(spec.model, Some("claude-sonnet-4-6".to_string()));
         assert_eq!(spec.system, "system prompt");
     }
 

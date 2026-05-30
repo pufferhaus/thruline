@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunnerSpec {
     pub name: String,
-    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub system: String,
     pub tools: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,7 +115,7 @@ mod tests {
             stage: "interview".to_string(),
             runner: RunnerSpec {
                 name: "interviewer".to_string(),
-                model: "claude-opus-4-8".to_string(),
+                model: Some("claude-opus-4-8".to_string()),
                 system: "You are an interviewer.".to_string(),
                 tools: vec!["read_file".to_string()],
                 temperature: Some(0.7),
@@ -132,7 +133,7 @@ mod tests {
     fn test_optional_fields_skipped_when_none() {
         let runner = RunnerSpec {
             name: "r".to_string(),
-            model: "m".to_string(),
+            model: None,
             system: "s".to_string(),
             tools: vec![],
             temperature: None,
@@ -141,6 +142,7 @@ mod tests {
         let s = serde_json::to_string(&runner).unwrap();
         assert!(!s.contains("temperature"));
         assert!(!s.contains("max_tokens"));
+        assert!(!s.contains("model"));
     }
 
     #[test]

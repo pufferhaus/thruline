@@ -19,8 +19,6 @@ pub enum ValidationError {
     CircularImport(String),
     #[error("duplicate name '{0}'")]
     DuplicateName(String),
-    #[error("runner '{0}' is missing required field 'model'")]
-    MissingModel(String),
     #[error("runner '{0}' is missing required field 'system'")]
     MissingSystem(String),
 }
@@ -50,9 +48,6 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
             TlItem::Runner(r) => {
                 if !runner_names.insert(r.name.clone()) {
                     errors.push(ValidationError::DuplicateName(r.name.clone()));
-                }
-                if r.model.is_empty() {
-                    errors.push(ValidationError::MissingModel(r.name.clone()));
                 }
                 if matches!(&r.system, PromptSource::Inline(s) if s.is_empty()) {
                     errors.push(ValidationError::MissingSystem(r.name.clone()));
@@ -325,7 +320,8 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_model() {
+    fn test_missing_model_is_valid() {
+        // model is optional — runners without a model declaration are valid
         let items = vec![TlItem::Runner(RunnerDecl {
             name: "r".to_string(),
             model: "".to_string(),
@@ -335,7 +331,7 @@ mod tests {
             max_tokens: None,
         })];
         let result = validate(&items);
-        assert!(result.errors.iter().any(|e| matches!(e, ValidationError::MissingModel(n) if n == "r")));
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
     }
 
     #[test]
