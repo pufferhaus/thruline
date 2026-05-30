@@ -190,3 +190,33 @@ pipeline p {
     assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("ok"));
 }
+
+#[test]
+fn test_pipeline_done_includes_value_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    let run_out = thruline()
+        .args(["run", tl.to_str().unwrap(), "--driver", "stdio"])
+        .output().unwrap();
+    let run_id = serde_json::from_str::<serde_json::Value>(
+        String::from_utf8_lossy(&run_out.stdout).lines().next().unwrap()
+    ).unwrap()["run_id"].as_str().unwrap().to_string();
+
+    // a routes to b on verdict==ok; b has no routes → pipeline_done
+    thruline().args(["resume", &run_id, "--stage", "a", "--artifact", "verdict=ok"])
+        .output().unwrap();
+    let done_out = thruline()
+        .args(["resume", &run_id, "--stage", "b"])
+        .output().unwrap();
+    let done_stdout = String::from_utf8_lossy(&done_out.stdout);
+
+    let done: serde_json::Value = done_stdout.lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .find(|v: &serde_json::Value| v["event"] == "pipeline_done")
+        .expect("no pipeline_done");
+
+    let outputs = &done["outputs"];
+    assert!(outputs.is_object(), "outputs should be an object, got: {}", outputs);
+    assert_eq!(outputs["a.verdict"], "ok", "a.verdict missing: {}", outputs);
+}

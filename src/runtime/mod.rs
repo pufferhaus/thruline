@@ -344,11 +344,10 @@ impl Runtime {
 
             self.state.status = RunStatus::AwaitingResume { stage: next_stage };
         } else {
-            let outputs: Vec<String> = self.state.artifacts.file_keys().cloned().collect();
             ThrulineEvent::PipelineDone {
                 run_id: self.state.run_id.clone(),
                 ts: chrono::Utc::now(),
-                outputs,
+                outputs: self.state.artifacts.to_json(),
             }
             .emit();
             self.state.status = RunStatus::Done;

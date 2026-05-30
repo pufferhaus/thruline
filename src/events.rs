@@ -76,7 +76,7 @@ pub enum ThrulineEvent {
     PipelineDone {
         run_id: String,
         ts: DateTime<Utc>,
-        outputs: Vec<String>,
+        outputs: serde_json::Value,
     },
     PipelineError {
         run_id: String,
@@ -170,7 +170,7 @@ mod tests {
             },
             ThrulineEvent::PipelineDone {
                 run_id: run_id.clone(), ts,
-                outputs: vec!["notes.md".to_string()],
+                outputs: serde_json::json!({"stage.result": "done"}),
             },
         ];
         for ev in &events {
