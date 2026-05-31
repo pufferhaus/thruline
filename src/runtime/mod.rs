@@ -210,9 +210,9 @@ impl Runtime {
             .pipeline(&pipeline_name)
             .ok_or_else(|| anyhow::anyhow!("pipeline '{}' not found", pipeline_name))?;
 
-        let current_stage_name = match &self.state.status {
-            RunStatus::Running => pipeline.start.clone(),
-            RunStatus::AwaitingResume { stage } => stage.clone(),
+        let (current_stage_name, parallel_hint) = match &self.state.status {
+            RunStatus::Running => (pipeline.start.clone(), None),
+            RunStatus::AwaitingResume { stage, parallel } => (stage.clone(), *parallel),
             RunStatus::Done | RunStatus::Failed(_) | RunStatus::ParallelAwait { .. } => {
                 return Ok(false)
             }
@@ -267,11 +267,13 @@ impl Runtime {
             artifacts: input_artifacts.clone(),
             prompt: prompt.clone(),
             outputs: declared_outputs,
+            parallel: parallel_hint,
         }
         .emit();
 
         self.state.status = RunStatus::AwaitingResume {
             stage: current_stage_name.clone(),
+            parallel: None,  // clear hint — this stage was just invoked
         };
         self.state.save()?;
 
@@ -295,8 +297,8 @@ impl Runtime {
         outputs: Vec<(String, String, bool)>,
     ) -> anyhow::Result<()> {
         match &self.state.status {
-            RunStatus::AwaitingResume { stage } if stage == stage_name => {}
-            RunStatus::AwaitingResume { stage } => anyhow::bail!(
+            RunStatus::AwaitingResume { stage, .. } if stage == stage_name => {}
+            RunStatus::AwaitingResume { stage, .. } => anyhow::bail!(
                 "run is awaiting stage '{}', cannot resume stage '{}'",
                 stage, stage_name
             ),
@@ -350,15 +352,10 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
-            if route.target.parallel_spec.is_some() {
-                let spec = route.target.parallel_spec.as_ref().unwrap();
-                let limit_str = spec.limit.map(|l| format!("*{}", l)).unwrap_or_else(|| "*".to_string());
-                anyhow::bail!(
-                    "route {} -> {}[{}]: fan-out is not yet implemented — \
-                     remove the fan-out spec from your pipeline or wait for a future release",
-                    stage_name, next_stage, limit_str
-                );
-            }
+            // Propagate parallel hint from route target to next AwaitingResume
+            let parallel = route.target.parallel_spec.as_ref()
+                .map(|spec| spec.limit);  // None = [*], Some(N) = [*N]
+
             let predicate_desc = format_route_source(&route.source);
             ThrulineEvent::RouteTaken {
                 run_id: self.state.run_id.clone(),
@@ -369,7 +366,7 @@ impl Runtime {
             }
             .emit();
 
-            self.state.status = RunStatus::AwaitingResume { stage: next_stage };
+            self.state.status = RunStatus::AwaitingResume { stage: next_stage, parallel };
         } else {
             ThrulineEvent::PipelineDone {
                 run_id: self.state.run_id.clone(),
@@ -534,9 +531,9 @@ mod tests {
     #[test]
     fn test_resume_stage_updates_artifacts_and_advances() {
         let mut rt = mk_runtime();
-        rt.state.status = crate::runtime::state::RunStatus::AwaitingResume { stage: "a".into() };
+        rt.state.status = crate::runtime::state::RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
         rt.resume_stage("a", vec![("verdict".to_string(), "ok".to_string(), false)]).unwrap();
-        assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage } if stage == "b"));
+        assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage, .. } if stage == "b"));
         assert_eq!(rt.state.artifacts.get_ref("a.verdict"), Some("ok"));
     }
 
@@ -704,7 +701,7 @@ mod tests {
     #[test]
     fn test_resume_wrong_stage_errors() {
         let mut rt = mk_runtime();
-        rt.state.status = RunStatus::AwaitingResume { stage: "a".into() };
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
         let err = rt.resume_stage("b", vec![]).unwrap_err();
         assert!(err.to_string().contains("awaiting stage 'a'"), "got: {}", err);
     }
@@ -740,7 +737,8 @@ mod tests {
     }
 
     #[test]
-    fn test_fan_out_route_errors_with_clear_message() {
+    fn test_fan_out_route_sets_parallel_hint_on_next_status() {
+        // Fan-out [*2] route should propagate parallel: Some(Some(2)) onto AwaitingResume
         let state = RunState::new("r".into(), "p3".into(), "/tmp/t.line".into());
         let items = vec![
             mk_runner("r"),
@@ -767,12 +765,43 @@ mod tests {
             }),
         ];
         let mut rt = Runtime::new(state, items);
-        rt.state.status = RunStatus::AwaitingResume { stage: "a".into() };
-        let err = rt.resume_stage("a", vec![]).unwrap_err();
-        assert!(
-            err.to_string().contains("fan-out") && err.to_string().contains("not yet implemented"),
-            "expected fan-out error, got: {}", err
-        );
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
+        rt.resume_stage("a", vec![]).unwrap();
+        // b should be next, with parallel hint Some(Some(2)) = [*2]
+        assert!(matches!(
+            &rt.state.status,
+            RunStatus::AwaitingResume { stage, parallel } if stage == "b" && *parallel == Some(Some(2))
+        ), "expected AwaitingResume{{b, parallel=Some(Some(2))}}, got: {:?}", rt.state.status);
+    }
+
+    #[test]
+    fn test_unlimited_fan_out_sets_none_limit_hint() {
+        // Fan-out [*] (no limit) should set parallel: Some(None)
+        let state = RunState::new("r".into(), "p4".into(), "/tmp/t.line".into());
+        let items = vec![
+            mk_runner("r"),
+            mk_stage("a", "r", &[]),
+            mk_stage("b", "r", &[]),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p4".into(),
+                inputs: vec![],
+                start: "a".into(),
+                routes: vec![Route {
+                    source: RouteSource::Stage("a".into()),
+                    target: RouteTarget {
+                        stage: "b".into(),
+                        parallel_spec: Some(ParallelSpec { limit: None }),
+                    },
+                }],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
+        rt.resume_stage("a", vec![]).unwrap();
+        assert!(matches!(
+            &rt.state.status,
+            RunStatus::AwaitingResume { stage, parallel } if stage == "b" && *parallel == Some(None)
+        ), "expected AwaitingResume{{b, parallel=Some(None)}}, got: {:?}", rt.state.status);
     }
 
     #[test]

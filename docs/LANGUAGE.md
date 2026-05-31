@@ -279,7 +279,7 @@ pipeline <name> {
 | `stage-name` | Unconditional — fires after this stage completes |
 | `stage.artifact == "value"` | Predicate — fires if the named ref artifact equals value |
 | `stage.artifact != "value"` | Predicate — fires if the named ref artifact does not equal value |
-| `stage-name[*]` | Fan-in — fires after all parallel slots of this stage complete |
+| `stage-name[*]` | Fires after the stage completes (equivalent to unconditional; was "fan-in") |
 
 Routes are evaluated in declaration order; the first match wins. An unconditional route placed last acts as a fallthrough.
 
@@ -287,9 +287,13 @@ Routes are evaluated in declaration order; the first match wins. An unconditiona
 
 | Form | Meaning |
 |---|---|
-| `stage-name` | Single next stage |
-| `stage-name[*]` | Fan-out — unlimited parallel copies |
-| `stage-name[*N]` | Fan-out — max N concurrent copies |
+| `stage-name` | Route to stage; single-agent invocation |
+| `stage-name[*]` | Route to stage with **parallel hint** — tells the harness the stage can use subagents; count is harness-decided |
+| `stage-name[*N]` | Route to stage with **parallel hint** suggesting up to N subagents |
+
+**Parallel hint semantics:** `[*]` and `[*N]` are instructions to the harness, not directives to the orchestrator. When a route with a parallel spec is taken, the next `stage_invoke` event carries a `parallel` field. The harness reads this and appends subagent instructions to the agent's context. The agent decides internally how to use subagents and returns its outputs as a single stage result. Thruline sees one invocation in, one `stage_complete` out.
+
+This keeps runners atomic (a runner defines a single task) while routes signal where parallelism is appropriate.
 
 #### Example
 
@@ -409,15 +413,8 @@ Warnings: stages unreachable from a pipeline's `start`.
 
 ## Feature Gaps
 
-**Parallel fan-out/fan-in** (`[*N]` / `[*]`)
-Parsed and validated. At runtime, a pipeline that routes to a fan-out target will fail with a clear error:
-```
-route gather -> worker[*3]: fan-out is not yet implemented
-```
-The `Scheduler` struct exists but is not wired into `resume_stage`. Fan-out pipelines are authorable and inspectable — they just cannot be executed yet.
-
 **`run` blocks (parallel stage invocations)**
-Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — follows same parallel execution path as fan-out. See `src/runtime/mod.rs` TODO.
+Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — `advance()` needs to emit one `StageInvoke` per run and track per-run completions via `--run <name>` on resume. See `src/runtime/mod.rs` TODO.
 
 **Seed paths** (`as path("seed.md")`)
 The seed-path syntax in artifact declarations is parsed and stored but never applied at runtime. Declaring `in: brief? as path("default-brief.md")` does not pre-populate the artifact store before the stage runs.

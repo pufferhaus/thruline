@@ -6,7 +6,13 @@ use crate::runtime::artifact::ArtifactStore;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RunStatus {
     Running,
-    AwaitingResume { stage: String },
+    AwaitingResume {
+        stage: String,
+        /// Present when the route that led here had a [*] or [*N] spec.
+        /// None = no hint (single agent). Some(None) = [*]. Some(Some(N)) = [*N].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parallel: Option<Option<u32>>,
+    },
     ParallelAwait  { stage: String, remaining: usize },
     Done,
     Failed(String),
@@ -131,10 +137,10 @@ mod tests {
     #[test]
     fn test_awaiting_resume_status_roundtrip() {
         let mut state = RunState::new("r".to_string(), "p".to_string(), "/t.line".into());
-        state.status = RunStatus::AwaitingResume { stage: "interview".to_string() };
+        state.status = RunStatus::AwaitingResume { stage: "interview".to_string(), parallel: None };
         let json = serde_json::to_string(&state).unwrap();
         let back: RunState = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back.status, RunStatus::AwaitingResume { stage } if stage == "interview"));
+        assert!(matches!(back.status, RunStatus::AwaitingResume { stage, .. } if stage == "interview"));
     }
 
     #[test]

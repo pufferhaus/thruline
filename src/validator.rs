@@ -13,8 +13,6 @@ pub enum ValidationError {
     UnknownArtifact { stage: String, artifact: String },
     #[error("stage '{stage}' input '{input}' references unknown source stage '{from_stage}'")]
     UnknownSourceStage { stage: String, input: String, from_stage: String },
-    #[error("parallel fan-out for stage '{0}' has no matching fan-in route")]
-    UnpairedFanOut(String),
     #[error("concurrency limit must be >= 1 in fan-out for stage '{0}'")]
     InvalidConcurrencyLimit(String),
     #[error("duplicate name '{0}'")]
@@ -139,8 +137,6 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
             }
         }
 
-        let mut fan_out_stages: HashSet<String> = HashSet::new();
-        let mut fan_in_stages:  HashSet<String> = HashSet::new();
         let mut referenced_stages: HashSet<String> = HashSet::new();
 
         // Check start stage
@@ -162,7 +158,6 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
                         errors.push(ValidationError::UnknownStage(s.clone()));
                     }
                     referenced_stages.insert(s.clone());
-                    fan_in_stages.insert(s.clone());
                 }
                 RouteSource::Predicate { stage, artifact, .. } => {
                     if !stage_names.contains(stage) {
@@ -195,19 +190,11 @@ pub fn validate(items: &[TlItem]) -> ValidationResult {
             }
             referenced_stages.insert(target.clone());
 
-            // Check fan-out
+            // Validate concurrency limit — 0 is invalid (use [*] for unlimited)
             if let Some(spec) = &route.target.parallel_spec {
                 if spec.limit == Some(0) {
                     errors.push(ValidationError::InvalidConcurrencyLimit(target.clone()));
                 }
-                fan_out_stages.insert(target.clone());
-            }
-        }
-
-        // Every fan-out must have a fan-in
-        for fo_stage in &fan_out_stages {
-            if !fan_in_stages.contains(fo_stage) {
-                errors.push(ValidationError::UnpairedFanOut(fo_stage.clone()));
             }
         }
 
@@ -347,7 +334,8 @@ mod tests {
     }
 
     #[test]
-    fn test_unpaired_fan_out() {
+    fn test_fan_out_without_fan_in_is_valid() {
+        // Fan-out no longer requires a paired fan-in — [*] is a hint to the harness
         let items = vec![
             runner("r"),
             stage("a", "r", &[]),
@@ -361,7 +349,7 @@ mod tests {
             }]),
         ];
         let result = validate(&items);
-        assert!(result.errors.iter().any(|e| matches!(e, ValidationError::UnpairedFanOut(s) if s == "b")));
+        assert!(result.errors.is_empty(), "fan-out without fan-in should be valid: {:?}", result.errors);
     }
 
     #[test]
@@ -370,20 +358,13 @@ mod tests {
             runner("r"),
             stage("a", "r", &[]),
             stage("b", "r", &[]),
-            stage("c", "r", &[]),
-            pipeline("p", "a", vec![
-                Route {
-                    source: RouteSource::Stage("a".to_string()),
-                    target: RouteTarget {
-                        stage: "b".to_string(),
-                        parallel_spec: Some(ParallelSpec { limit: Some(0) }),
-                    },
+            pipeline("p", "a", vec![Route {
+                source: RouteSource::Stage("a".to_string()),
+                target: RouteTarget {
+                    stage: "b".to_string(),
+                    parallel_spec: Some(ParallelSpec { limit: Some(0) }),
                 },
-                Route {
-                    source: RouteSource::FanIn("b".to_string()),
-                    target: RouteTarget { stage: "c".to_string(), parallel_spec: None },
-                },
-            ]),
+            }]),
         ];
         let result = validate(&items);
         assert!(result.errors.iter().any(|e| matches!(e, ValidationError::InvalidConcurrencyLimit(s) if s == "b")));

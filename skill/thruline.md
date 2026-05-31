@@ -48,7 +48,12 @@ TaskUpdate: status → in_progress
             description → "running — <artifact-name>: …"  (if prior outputs exist)
 ```
 
-Then spawn the agent.
+Then spawn the agent. If the `stage_invoke` event contains a `parallel` field, tell the agent it should use subagents:
+
+- `"parallel": null` or `"parallel": {}` — append to the agent's prompt: *"You may spawn subagents to complete this task in parallel. Synthesize their results before returning your output."*
+- `"parallel": {"limit": N}` — append: *"You may spawn up to N subagents to complete this task in parallel. Synthesize their results before returning your output."*
+
+The agent's runner spec and declared outputs are unchanged — the parallel hint only affects how the agent chooses to work internally.
 
 ### After agent completes and resume succeeds
 

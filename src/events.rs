@@ -41,6 +41,13 @@ pub enum ThrulineEvent {
         prompt: Option<String>,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         outputs: Vec<OutputDecl>,
+        /// Present when the route to this stage carried a [*] or [*N] parallel hint.
+        /// The harness should invoke this stage in subagent mode.
+        /// None = single-agent invocation.
+        /// Some(None) = [*]: use subagents, harness decides count.
+        /// Some(Some(N)) = [*N]: use up to N subagents.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        parallel: Option<Option<u32>>,
     },
     StageComplete {
         run_id: String,
@@ -134,6 +141,7 @@ mod tests {
             artifacts: serde_json::json!({}),
             prompt: None,
             outputs: vec![],
+            parallel: None,
         };
         let s = serde_json::to_string(&ev).unwrap();
         let back: ThrulineEvent = serde_json::from_str(&s).unwrap();

@@ -211,7 +211,7 @@ fn cmd_runs() -> anyhow::Result<()> {
     for run in runs {
         let status = match &run.status {
             RunStatus::Running => "running".to_string(),
-            RunStatus::AwaitingResume { stage } => format!("awaiting:{}", stage),
+            RunStatus::AwaitingResume { stage, .. } => format!("awaiting:{}", stage),
             RunStatus::ParallelAwait { stage, remaining } => {
                 format!("parallel:{}:{}", stage, remaining)
             }
@@ -323,7 +323,7 @@ pub async fn cmd_run(
                         } else { None }
                     }).unwrap_or_else(|| "unknown".to_string())
                 }
-                crate::runtime::state::RunStatus::AwaitingResume { stage } => stage.clone(),
+                crate::runtime::state::RunStatus::AwaitingResume { stage, .. } => stage.clone(),
                 _ => "unknown".to_string(),
             };
             if let Err(e) = runtime.advance(&driver).await {
@@ -352,7 +352,7 @@ pub async fn cmd_run(
                         } else { None }
                     }).unwrap_or_else(|| "unknown".to_string())
                 }
-                crate::runtime::state::RunStatus::AwaitingResume { stage } => stage.clone(),
+                crate::runtime::state::RunStatus::AwaitingResume { stage, .. } => stage.clone(),
                 _ => "unknown".to_string(),
             };
             if let Err(e) = runtime.advance(&driver).await {
@@ -409,7 +409,7 @@ pub async fn cmd_resume(
     if matches!(runtime.state.status, RunStatus::AwaitingResume { .. }) {
         let driver = crate::driver::stdio::StdioDriver;
         let pending_stage = match &runtime.state.status {
-            RunStatus::AwaitingResume { stage } => stage.clone(),
+            RunStatus::AwaitingResume { stage, .. } => stage.clone(),
             _ => "unknown".to_string(),
         };
         if let Err(e) = runtime.advance(&driver).await {
