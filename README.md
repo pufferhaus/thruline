@@ -210,7 +210,7 @@ stage review {
 }
 
 // Parallel run blocks — all run simultaneously, stage completes when all finish
-stage dual-review {
+stage dual_review {
   runner: analyst            // default runner for runs that don't declare one
   run quality {
     prompt: "Assess correctness and completeness."
@@ -232,7 +232,7 @@ Artifacts flow automatically — if `classify` outputs `language as value`, any 
 The routing declaration.
 
 ```
-thruline feature-dev {
+thruline feature_dev {
   inputs {
     brief    as path
     context? as value
