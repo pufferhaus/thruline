@@ -144,7 +144,7 @@ stage checkpoint {}
 ### Artifact Declarations
 
 ```
-<name>[?] as <kind>[("<seed-path>")]
+<name>[?] as <kind>[in ["a","b",...]][("<seed-path>")]
 ```
 
 | Part | Meaning |
@@ -153,6 +153,7 @@ stage checkpoint {}
 | `?` | Optional — stage runs even if this input is absent |
 | `as path` | Disk-persisted artifact; absolute path stored in run state |
 | `as value` | In-memory string stored in run state |
+| `in ["a","b",...]` | Optional value constraint on `value` outputs — `resume` returns an error if the agent produces a value not in the list |
 | `("path")` | Seed path — pre-populates the artifact before the stage runs |
 
 **Examples:**
@@ -164,6 +165,10 @@ stage interview {
        verdict as value
   runner: analyst
   prompt: file("prompts/task.md")
+}
+
+stage classify {
+  out: sentiment as value in ["positive","negative","neutral"]
 }
 
 stage notify {
@@ -444,4 +449,7 @@ Typos in model identifiers fail at API call time, not validate time.
 
 **No string escape sequences**
 Quoted strings terminate at the first `"` — backslash escaping is not supported. Use `file("path")` for system prompts or prompts containing quotes or special characters.
+
+**Value constraints on path outputs not enforced**
+`in [...]` is parsed on any `artifact_decl` but only enforced at runtime for `value` outputs. Declaring a constraint on a `path` output is a no-op.
 

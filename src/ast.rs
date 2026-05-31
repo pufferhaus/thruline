@@ -55,6 +55,7 @@ pub struct ArtifactDecl {
     pub optional: bool,
     pub kind: ArtifactKind,
     pub seed_path: Option<String>,
+    pub value_constraint: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

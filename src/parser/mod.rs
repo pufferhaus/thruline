@@ -181,12 +181,30 @@ fn parse_artifact_decl(pair: Pair<Rule>) -> ArtifactDecl {
         _      => ArtifactKind::Value,
     };
 
-    // Optional: seed_init
-    let seed_path = inner.next().map(|seed| {
-        unquote(seed.into_inner().next().unwrap().as_str())
-    });
+    // Parse value_constraint? and seed_init? from remaining tokens
+    let mut value_constraint = None;
+    let mut seed_path = None;
+    for p in inner {
+        match p.as_rule() {
+            Rule::value_constraint => {
+                value_constraint = Some(
+                    p.into_inner()
+                        .map(|s| {
+                            let raw = s.as_str();
+                            raw[1..raw.len()-1].to_string() // strip surrounding quotes
+                        })
+                        .collect()
+                );
+            }
+            Rule::seed_init => {
+                let raw = p.into_inner().next().unwrap().as_str();
+                seed_path = Some(raw[1..raw.len()-1].to_string());
+            }
+            _ => {}
+        }
+    }
 
-    ArtifactDecl { name, source, optional, kind, seed_path }
+    ArtifactDecl { name, source, optional, kind, seed_path, value_constraint }
 }
 
 fn parse_pipeline(pair: Pair<Rule>) -> PipelineDecl {
@@ -597,6 +615,23 @@ stage analyze {
         assert_eq!(s.inputs[0].name, "doc");
         assert!(s.inputs[0].optional);
         assert_eq!(s.inputs[0].kind, ArtifactKind::Path);
+    }
+
+    #[test]
+    fn test_parse_value_constraint_on_output() {
+        let src = r#"
+stage classify {
+  out: sentiment as value in ["positive","negative","neutral"]
+}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Stage(s) = &items[0] else { panic!() };
+        let out = &s.outputs[0];
+        assert_eq!(out.name, "sentiment");
+        assert_eq!(
+            out.value_constraint.as_ref().unwrap(),
+            &vec!["positive".to_string(), "negative".to_string(), "neutral".to_string()]
+        );
     }
 
     #[test]

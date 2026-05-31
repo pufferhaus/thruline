@@ -448,6 +448,27 @@ impl Runtime {
                 );
             }
 
+            // Validate value constraints on declared outputs (ParallelAwait path).
+            {
+                let stages = self.stages();
+                if let Some(stage_decl) = stages.get(stage_name) {
+                    for (name, value, _is_file) in &outputs {
+                        if let Some(decl) = stage_decl.outputs.iter().chain(
+                            stage_decl.runs.iter().flat_map(|r| r.outputs.iter())
+                        ).find(|o| &o.name == name) {
+                            if let Some(allowed) = &decl.value_constraint {
+                                if !allowed.contains(value) {
+                                    anyhow::bail!(
+                                        "stage '{}' output '{}' = {:?} is not in allowed values {:?}",
+                                        stage_name, name, value, allowed
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Store artifacts under the stage namespace.
             for (name, value, is_file) in &outputs {
                 let key = format!("{}.{}", stage_name, name);
@@ -511,6 +532,25 @@ impl Runtime {
                 outputs: serde_json::Value::Object(outputs_json),
             }
             .emit();
+        }
+
+        // Validate value constraints on declared outputs (AwaitingResume path).
+        {
+            let stages = self.stages();
+            if let Some(stage_decl) = stages.get(stage_name) {
+                for (name, value, _is_file) in &outputs {
+                    if let Some(decl) = stage_decl.outputs.iter().find(|o| &o.name == name) {
+                        if let Some(allowed) = &decl.value_constraint {
+                            if !allowed.contains(value) {
+                                anyhow::bail!(
+                                    "stage '{}' output '{}' = {:?} is not in allowed values {:?}",
+                                    stage_name, name, value, allowed
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         for (name, value, is_file) in outputs {
@@ -605,6 +645,7 @@ mod tests {
                     optional: false,
                     kind: k.clone(),
                     seed_path: None,
+                    value_constraint: None,
                 })
                 .collect(),
             runner: Some(runner_name.to_string()),
@@ -742,14 +783,14 @@ mod tests {
             TlItem::Stage(StageDecl {
                 name: "a".into(),
                 inputs: vec![],
-                outputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                outputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None, value_constraint: None }],
                 runner: Some("runner".into()),
                 prompt: None,
                 runs: vec![],
             }),
             TlItem::Stage(StageDecl {
                 name: "b".into(),
-                inputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "verdict".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None, value_constraint: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -790,7 +831,7 @@ mod tests {
             mk_stage("b", "runner", &[("score", ArtifactKind::Value)]),
             TlItem::Stage(StageDecl {
                 name: "c".into(),
-                inputs: vec![ArtifactDecl { name: "score".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "score".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None, value_constraint: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -826,7 +867,7 @@ mod tests {
             mk_stage("a", "runner", &[("note", ArtifactKind::Value)]),
             TlItem::Stage(StageDecl {
                 name: "b".into(),
-                inputs: vec![ArtifactDecl { name: "note".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None }],
+                inputs: vec![ArtifactDecl { name: "note".into(), source: None, optional: false, kind: ArtifactKind::Value, seed_path: None, value_constraint: None }],
                 outputs: vec![],
                 runner: Some("runner".into()),
                 prompt: None,
@@ -868,6 +909,7 @@ mod tests {
                     optional: false,
                     kind: ArtifactKind::Value,
                     seed_path: None,
+                    value_constraint: None,
                 }],
                 outputs: vec![],
                 runner: Some("runner".into()),
@@ -922,6 +964,7 @@ mod tests {
                     name: "brief".into(), source: None, optional: true,
                     kind: ArtifactKind::Path,
                     seed_path: Some("specs/brief.md".into()),
+                    value_constraint: None,
                 }],
                 outputs: vec![], runner: Some("runner".into()),
                 prompt: None, runs: vec![],
@@ -1046,6 +1089,7 @@ mod tests {
                 inputs: vec![ArtifactDecl {
                     name: "code".into(), source: None, optional: false,
                     kind: ArtifactKind::Value, seed_path: None,
+                    value_constraint: None,
                 }],
                 outputs: vec![],
                 runner: Some("runner".into()),
@@ -1078,6 +1122,7 @@ mod tests {
                 inputs: vec![ArtifactDecl {
                     name: "code".into(), source: Some("input".into()), optional: false,
                     kind: ArtifactKind::Value, seed_path: None,
+                    value_constraint: None,
                 }],
                 outputs: vec![],
                 runner: Some("runner".into()),
@@ -1109,6 +1154,7 @@ mod tests {
                 inputs: vec![ArtifactDecl {
                     name: "code".into(), source: None, optional: false,
                     kind: ArtifactKind::Value, seed_path: None,
+                    value_constraint: None,
                 }],
                 outputs: vec![],
                 runner: Some("runner".into()),
@@ -1151,6 +1197,7 @@ mod tests {
                         outputs: vec![ArtifactDecl {
                             name: "verdict".into(), source: None, optional: false,
                             kind: ArtifactKind::Value, seed_path: None,
+                            value_constraint: None,
                         }],
                     },
                     RunDecl {
@@ -1160,6 +1207,7 @@ mod tests {
                         outputs: vec![ArtifactDecl {
                             name: "risks".into(), source: None, optional: false,
                             kind: ArtifactKind::Value, seed_path: None,
+                            value_constraint: None,
                         }],
                     },
                 ],
@@ -1202,6 +1250,7 @@ mod tests {
                         outputs: vec![ArtifactDecl {
                             name: "verdict".into(), source: None, optional: false,
                             kind: ArtifactKind::Value, seed_path: None,
+                            value_constraint: None,
                         }],
                     },
                     RunDecl {
@@ -1211,6 +1260,7 @@ mod tests {
                         outputs: vec![ArtifactDecl {
                             name: "risks".into(), source: None, optional: false,
                             kind: ArtifactKind::Value, seed_path: None,
+                            value_constraint: None,
                         }],
                     },
                 ],
@@ -1300,5 +1350,57 @@ mod tests {
         let err = rt.resume_stage("a", None, vec![]).unwrap_err();
         assert!(err.to_string().contains("3"), "expected limit 3 in error: {}", err);
         assert!(err.to_string().contains("visited"), "expected 'visited' in error: {}", err);
+    }
+
+    #[test]
+    fn test_value_constraint_rejects_invalid_output() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            TlItem::Stage(StageDecl {
+                name: "classify".into(), inputs: vec![],
+                outputs: vec![ArtifactDecl {
+                    name: "sentiment".into(), source: None, optional: false,
+                    kind: ArtifactKind::Value, seed_path: None,
+                    value_constraint: Some(vec!["positive".into(), "negative".into()]),
+                }],
+                runner: Some("runner".into()), prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "classify".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.status = RunStatus::AwaitingResume { stage: "classify".into(), parallel: None };
+        let err = rt.resume_stage("classify", None, vec![
+            ("sentiment".into(), "VERY_POSITIVE".into(), false)
+        ]).unwrap_err();
+        assert!(err.to_string().contains("not in allowed values"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_value_constraint_accepts_valid_output() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            TlItem::Stage(StageDecl {
+                name: "classify".into(), inputs: vec![],
+                outputs: vec![ArtifactDecl {
+                    name: "sentiment".into(), source: None, optional: false,
+                    kind: ArtifactKind::Value, seed_path: None,
+                    value_constraint: Some(vec!["positive".into(), "negative".into()]),
+                }],
+                runner: Some("runner".into()), prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "classify".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.status = RunStatus::AwaitingResume { stage: "classify".into(), parallel: None };
+        rt.resume_stage("classify", None, vec![
+            ("sentiment".into(), "positive".into(), false)
+        ]).unwrap();
+        assert_eq!(rt.state.artifacts.get_ref("classify.sentiment"), Some("positive"));
     }
 }

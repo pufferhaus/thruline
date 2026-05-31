@@ -16,11 +16,12 @@ file_ref    =  { "file" ~ "(" ~ quoted_str ~ ")" }
 prompt_val  =  { file_ref | quoted_str }
 
 // Artifact declarations
-artifact_kind   = { "path" | "value" }
-seed_init       = { "(" ~ quoted_str ~ ")" }
-opt_marker      = { "?" }
-artifact_source = { identifier ~ "." }
-artifact_decl   = { artifact_source? ~ identifier ~ opt_marker? ~ "as" ~ artifact_kind ~ seed_init? }
+artifact_kind     = { "path" | "value" }
+seed_init         = { "(" ~ quoted_str ~ ")" }
+opt_marker        = { "?" }
+artifact_source   = { identifier ~ "." }
+value_constraint  = { "in" ~ "[" ~ quoted_str ~ ("," ~ quoted_str)* ~ "]" }
+artifact_decl     = { artifact_source? ~ identifier ~ opt_marker? ~ "as" ~ artifact_kind ~ value_constraint? ~ seed_init? }
 
 // ── Runner ────────────────────────────────────────────────────────────────
 tools_list   = { "[" ~ (identifier ~ ("," ~ identifier)*)? ~ "]" }
