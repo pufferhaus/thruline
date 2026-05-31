@@ -266,6 +266,7 @@ thruline inspect  <file.line>              # Show routing graph and stages
 thruline run      <file.line>              # Run (stdio/harness mode)
 thruline run      <file.line> \
   --driver api                             # Run standalone (Anthropic API)
+  --driver vertex                          # Run via Google Cloud Vertex AI
   --pipeline <name>                        # Select thruline by name
   --input key=value                        # Set input artifact
   --input file=file:///abs/path
@@ -306,6 +307,11 @@ ANTHROPIC_API_KEY=sk-... thruline run examples/pr_triage/triage.line \
 # Multi-reviewer (parallel run blocks)
 ANTHROPIC_API_KEY=sk-... thruline run examples/multi_reviewer/review.line \
   --driver api --input code=file:///path/to/file.rs
+
+# Vertex AI (GCP)
+VERTEX_ACCESS_TOKEN=$(gcloud auth print-access-token) \
+VERTEX_PROJECT=my-project \
+  thruline run workflow.line --driver vertex
 ```
 
 ---

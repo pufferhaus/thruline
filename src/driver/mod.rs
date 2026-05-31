@@ -4,6 +4,7 @@ pub mod openai;
 pub mod ollama;
 pub mod stdio;
 pub mod mock;
+pub mod vertex;
 
 use crate::events::RunnerSpec;
 use async_trait::async_trait;
