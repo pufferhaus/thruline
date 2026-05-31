@@ -9,6 +9,10 @@ homepage = "https://thruline.work"
 keywords = ["ai", "llm", "agents", "pipeline", "workflow"]
 categories = ["command-line-utilities"]
 
+[lib]
+name = "thruline"
+path = "src/lib.rs"
+
 [[bin]]
 name = "thruline"
 path = "src/main.rs"
@@ -27,6 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 reqwest = { version = "0.12", features = ["json"] }
 async-trait = "0.1"
+tower-lsp = "0.20"
 
 [dev-dependencies]
 tempfile = "3"
