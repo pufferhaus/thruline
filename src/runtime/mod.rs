@@ -279,6 +279,8 @@ impl Runtime {
             }
         };
 
+        *self.state.visit_counts.entry(current_stage_name.clone()).or_insert(0) += 1;
+
         let stages = self.stages();
         let stage = stages
             .get(&current_stage_name)
@@ -528,6 +530,16 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
+            const MAX_STAGE_VISITS: u32 = 100;
+            let visits = *self.state.visit_counts.get(&next_stage).unwrap_or(&0);
+            if visits >= MAX_STAGE_VISITS {
+                anyhow::bail!(
+                    "stage '{}' has been visited {} times — possible infinite loop. \
+                     Check your route predicates.",
+                    next_stage, visits
+                );
+            }
+
             let parallel = route.target.parallel_spec.as_ref().map(|spec| spec.limit);
             let predicate_desc = format_route_source(&route.source);
             ThrulineEvent::RouteTaken {
@@ -1176,5 +1188,46 @@ mod tests {
         assert!(matches!(&rt.state.status, RunStatus::Done));
         assert_eq!(rt.state.artifacts.get_ref("review.risks"), Some("none"));
         assert!(rt.state.history.contains(&"review".to_string()));
+    }
+
+    #[test]
+    fn test_visit_count_increments_on_advance() {
+        use tokio::runtime::Runtime as TokioRuntime;
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("a", "runner", &[("verdict", ArtifactKind::Value)]),
+            mk_stage("b", "runner", &[]),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "a".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        let driver = crate::driver::stdio::StdioDriver;
+        TokioRuntime::new().unwrap().block_on(rt.advance(&driver)).unwrap();
+        assert_eq!(rt.state.visit_counts.get("a").copied().unwrap_or(0), 1,
+            "visit count should be 1 after one advance");
+    }
+
+    #[test]
+    fn test_loop_limit_error_at_100_visits() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("a", "runner", &[("verdict", ArtifactKind::Value)]),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "a".into(),
+                routes: vec![Route {
+                    source: RouteSource::Stage("a".into()),
+                    target: RouteTarget { stage: "a".into(), parallel_spec: None },
+                }],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.visit_counts.insert("a".to_string(), 100);
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
+        let err = rt.resume_stage("a", None, vec![]).unwrap_err();
+        assert!(err.to_string().contains("visited"),
+            "expected loop limit error, got: {}", err);
     }
 }

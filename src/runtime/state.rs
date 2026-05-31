@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::runtime::artifact::ArtifactStore;
 
@@ -27,6 +28,8 @@ pub struct RunState {
     pub status:    RunStatus,
     pub artifacts: ArtifactStore,
     pub history:   Vec<String>,
+    #[serde(default)]
+    pub visit_counts: HashMap<String, u32>,
     pub started:   DateTime<Utc>,
     pub updated:   DateTime<Utc>,
 }
@@ -41,6 +44,7 @@ impl RunState {
             status: RunStatus::Running,
             artifacts: ArtifactStore::new(),
             history: Vec::new(),
+            visit_counts: HashMap::new(),
             started: now,
             updated: now,
         }
