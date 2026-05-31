@@ -248,6 +248,7 @@ mod tests {
         Route {
             source: RouteSource::Stage(from.to_string()),
             target: RouteTarget { stage: to.to_string(), parallel_spec: None },
+            max_visits: None,
         }
     }
 
@@ -326,6 +327,7 @@ mod tests {
                     value: "x".to_string(),
                 },
                 target: RouteTarget { stage: "b".to_string(), parallel_spec: None },
+                max_visits: None,
             }]),
         ];
         let result = validate(&items);
@@ -346,6 +348,7 @@ mod tests {
                     stage: "b".to_string(),
                     parallel_spec: Some(ParallelSpec { limit: Some(2) }),
                 },
+                max_visits: None,
             }]),
         ];
         let result = validate(&items);
@@ -364,6 +367,7 @@ mod tests {
                     stage: "b".to_string(),
                     parallel_spec: Some(ParallelSpec { limit: Some(0) }),
                 },
+                max_visits: None,
             }]),
         ];
         let result = validate(&items);
@@ -406,10 +410,12 @@ mod tests {
                         stage: "b".to_string(),
                         parallel_spec: Some(ParallelSpec { limit: Some(3) }),
                     },
+                    max_visits: None,
                 },
                 Route {
                     source: RouteSource::FanIn("b".to_string()),
                     target: RouteTarget { stage: "c".to_string(), parallel_spec: None },
+                    max_visits: None,
                 },
             ]),
         ];
@@ -432,6 +438,7 @@ mod tests {
                         value: "retry".to_string(),
                     },
                     target: RouteTarget { stage: "a".to_string(), parallel_spec: None },
+                    max_visits: None,
                 },
             ]),
         ];

@@ -56,7 +56,8 @@ route_source = _{ predicate | fan_in_src | stage_src }
 
 fan_out_spec = { "[*" ~ pos_int? ~ "]" }
 stage_target = { identifier ~ fan_out_spec? }
-route        = { route_source ~ "->" ~ stage_target }
+route_limit  = { "[max:" ~ pos_int ~ "]" }
+route        = { route_source ~ "->" ~ stage_target ~ route_limit? }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────
 pipe_start      = { "start" ~ ":" ~ identifier }

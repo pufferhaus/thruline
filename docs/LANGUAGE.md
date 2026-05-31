@@ -275,7 +275,7 @@ thruline <name> {
 ### Routes
 
 ```
-<source> -> <target>[<fan-out>]
+<source> -> <target>[<fan-out>] [max:N]
 ```
 
 #### Source forms
@@ -301,16 +301,34 @@ Routes are evaluated in declaration order; the first match wins. An unconditiona
 
 This keeps runners atomic (a runner defines a single task) while routes signal where parallelism is appropriate.
 
+#### Per-route visit cap
+
+```
+<source> -> <target> [max:N]
+```
+
+`[max:N]` sets an optional per-route visit cap on the target stage. When the target stage has been visited `N` or more times via this route, the runtime raises an error instead of routing again. Overrides the global default of 100. Useful for intentional retry loops with a bounded number of attempts.
+
+**Example:**
+
+```
+routes {
+  review.verdict != "approved" -> draft [max:4]   // at most 4 revision attempts
+}
+```
+
+`[max:N]` may be combined with fan-out: `a -> b[*3] [max:10]`.
+
 #### Example
 
 ```
 thruline feature_dev {
   start: interview
   routes {
-    interview.verdict == "rejected" -> interview   // retry loop
+    interview.verdict == "rejected" -> interview [max:5]   // at most 5 retry attempts
     interview.verdict == "approved" -> review
-    review -> implement[*3]                        // fan-out, max 3
-    implement[*] -> summarize                      // fan-in
+    review -> implement[*3]                                // fan-out, max 3
+    implement[*] -> summarize                              // fan-in
   }
 }
 ```
@@ -420,9 +438,6 @@ Warnings: stages unreachable from a thruline's `start`.
 
 **Compound route predicates**
 `==` and `!=` against a single string only. No `&&`, `||`, numeric comparisons.
-
-**No retry limit**
-Back-edge routes create unbounded loops. No `max_retries` or timeout.
 
 **Model string unvalidated**
 Typos in model identifiers fail at API call time, not validate time.

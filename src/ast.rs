@@ -82,6 +82,7 @@ pub struct PipelineDecl {
 pub struct Route {
     pub source: RouteSource,
     pub target: RouteTarget,
+    pub max_visits: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

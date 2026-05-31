@@ -263,9 +263,15 @@ fn parse_route(pair: Pair<Rule>) -> Route {
         ParallelSpec { limit }
     });
 
+    // Optional route_limit: "[max:" ~ pos_int ~ "]"
+    let max_visits = inner.next().map(|p| {
+        p.into_inner().next().unwrap().as_str().parse::<u32>().unwrap()
+    });
+
     Route {
         source,
         target: RouteTarget { stage, parallel_spec },
+        max_visits,
     }
 }
 
@@ -591,5 +597,22 @@ stage analyze {
         assert_eq!(s.inputs[0].name, "doc");
         assert!(s.inputs[0].optional);
         assert_eq!(s.inputs[0].kind, ArtifactKind::Path);
+    }
+
+    #[test]
+    fn test_parse_route_with_max_visits() {
+        let src = r#"
+thruline p {
+  start: a
+  routes {
+    a -> b [max:5]
+  }
+}
+stage a {}
+stage b {}
+"#;
+        let items = parse_str(src).unwrap();
+        let TlItem::Pipeline(p) = &items[0] else { panic!() };
+        assert_eq!(p.routes[0].max_visits, Some(5));
     }
 }

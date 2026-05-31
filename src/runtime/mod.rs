@@ -540,13 +540,14 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
-            const MAX_STAGE_VISITS: u32 = 100;
+            const GLOBAL_MAX_VISITS: u32 = 100;
+            let limit = route.max_visits.unwrap_or(GLOBAL_MAX_VISITS);
             let visits = *self.state.visit_counts.get(&next_stage).unwrap_or(&0);
-            if visits >= MAX_STAGE_VISITS {
+            if visits >= limit {
                 anyhow::bail!(
-                    "stage '{}' has been visited {} times — possible infinite loop. \
+                    "stage '{}' has been visited {} times (limit: {}) — possible infinite loop. \
                      Check your route predicates.",
-                    next_stage, visits
+                    next_stage, visits, limit
                 );
             }
 
@@ -634,6 +635,7 @@ mod tests {
                             stage: "b".into(),
                             parallel_spec: None,
                         },
+                        max_visits: None,
                     },
                     Route {
                         source: RouteSource::Predicate {
@@ -646,6 +648,7 @@ mod tests {
                             stage: "a".into(),
                             parallel_spec: None,
                         },
+                        max_visits: None,
                     },
                 ],
             }),
@@ -700,6 +703,7 @@ mod tests {
                 routes: vec![Route {
                     source: RouteSource::Stage("x".into()),
                     target: RouteTarget { stage: "y".into(), parallel_spec: None },
+                    max_visits: None,
                 }],
             }),
         ];
@@ -758,6 +762,7 @@ mod tests {
                 routes: vec![Route {
                     source: RouteSource::Stage("a".into()),
                     target: RouteTarget { stage: "b".into(), parallel_spec: None },
+                    max_visits: None,
                 }],
             }),
         ];
@@ -977,10 +982,12 @@ mod tests {
                             stage: "b".into(),
                             parallel_spec: Some(ParallelSpec { limit: Some(2) }),
                         },
+                        max_visits: None,
                     },
                     Route {
                         source: RouteSource::FanIn("b".into()),
                         target: RouteTarget { stage: "c".into(), parallel_spec: None },
+                        max_visits: None,
                     },
                 ],
             }),
@@ -1013,6 +1020,7 @@ mod tests {
                         stage: "b".into(),
                         parallel_spec: Some(ParallelSpec { limit: None }),
                     },
+                    max_visits: None,
                 }],
             }),
         ];
@@ -1259,6 +1267,7 @@ mod tests {
                 routes: vec![Route {
                     source: RouteSource::Stage("a".into()),
                     target: RouteTarget { stage: "a".into(), parallel_spec: None },
+                    max_visits: None,
                 }],
             }),
         ];
@@ -1268,5 +1277,28 @@ mod tests {
         let err = rt.resume_stage("a", None, vec![]).unwrap_err();
         assert!(err.to_string().contains("visited"),
             "expected loop limit error, got: {}", err);
+    }
+
+    #[test]
+    fn test_per_route_max_visits_overrides_global() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            mk_stage("a", "runner", &[]),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "a".into(),
+                routes: vec![Route {
+                    source: RouteSource::Stage("a".into()),
+                    target: RouteTarget { stage: "a".into(), parallel_spec: None },
+                    max_visits: Some(3),
+                }],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.visit_counts.insert("a".to_string(), 3);
+        rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
+        let err = rt.resume_stage("a", None, vec![]).unwrap_err();
+        assert!(err.to_string().contains("3"), "expected limit 3 in error: {}", err);
+        assert!(err.to_string().contains("visited"), "expected 'visited' in error: {}", err);
     }
 }
