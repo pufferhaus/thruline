@@ -13,7 +13,8 @@ pub enum RunStatus {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parallel: Option<Option<u32>>,
     },
-    ParallelAwait  { stage: String, remaining: usize },
+    /// Waiting for parallel run blocks to complete. `pending_runs` shrinks as each run reports back.
+    ParallelAwait { stage: String, pending_runs: Vec<String> },
     Done,
     Failed(String),
 }

@@ -39,6 +39,9 @@ pub enum Commands {
         run_id: String,
         #[arg(long)]
         stage: String,
+        /// For run blocks: name of the run block completing (e.g. --run quality)
+        #[arg(long)]
+        run: Option<String>,
         /// Artifact values: key=value (prefix file:// for file artifacts)
         #[arg(long = "artifact")]
         artifacts: Vec<String>,
@@ -53,7 +56,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Runs               => cmd_runs(),
         Commands::Status { run_id }  => cmd_status(&run_id),
         Commands::Run { file, pipeline, driver, inputs } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs).await,
-        Commands::Resume { run_id, stage, artifacts } => cmd_resume(&run_id, &stage, &artifacts).await,
+        Commands::Resume { run_id, stage, run, artifacts } => cmd_resume(&run_id, &stage, run.as_deref(), &artifacts).await,
     }
 }
 
@@ -212,8 +215,8 @@ fn cmd_runs() -> anyhow::Result<()> {
         let status = match &run.status {
             RunStatus::Running => "running".to_string(),
             RunStatus::AwaitingResume { stage, .. } => format!("awaiting:{}", stage),
-            RunStatus::ParallelAwait { stage, remaining } => {
-                format!("parallel:{}:{}", stage, remaining)
+            RunStatus::ParallelAwait { stage, pending_runs } => {
+                format!("parallel:{}:{}", stage, pending_runs.len())
             }
             RunStatus::Done        => "done".to_string(),
             RunStatus::Failed(e)   => format!("failed:{}", e),
@@ -374,6 +377,7 @@ pub async fn cmd_run(
 pub async fn cmd_resume(
     run_id: &str,
     stage_name: &str,
+    run_name: Option<&str>,
     artifact_args: &[String],
 ) -> anyhow::Result<()> {
     use crate::runtime::{state::RunState, Runtime};
@@ -395,7 +399,7 @@ pub async fn cmd_resume(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    if let Err(e) = runtime.resume_stage(stage_name, outputs) {
+    if let Err(e) = runtime.resume_stage(stage_name, run_name, outputs) {
         crate::events::ThrulineEvent::StageError {
             run_id: run_id.to_string(),
             ts: chrono::Utc::now(),

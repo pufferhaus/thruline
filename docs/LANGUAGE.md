@@ -248,7 +248,7 @@ stage dual-review {
 }
 ```
 
-> **Runtime note:** `run` blocks are parsed and validated but not yet executed at runtime. The parallel execution path is in development (same status as fan-out). `thruline validate` and `thruline inspect` both fully support them.
+> Each run block receives the same input artifacts as the stage. Resume each run with `thruline resume <run-id> --stage <name> --run <run-name> --artifact key=value`. The stage is complete when all runs have reported back.
 
 ---
 
@@ -411,9 +411,6 @@ Warnings: stages unreachable from a thruline's `start`.
 ---
 
 ## Feature Gaps
-
-**`run` blocks (parallel stage invocations)**
-Parsed, validated, displayed in `inspect`. Runtime execution not yet wired — `advance()` needs to emit one `StageInvoke` per run and track per-run completions via `--run <name>` on resume. See `src/runtime/mod.rs` TODO.
 
 **Seed paths** (`as path("seed.md")`)
 The seed-path syntax in artifact declarations is parsed and stored but never applied at runtime. Declaring `in: brief? as path("default-brief.md")` does not pre-populate the artifact store before the stage runs.

@@ -223,11 +223,70 @@ impl Runtime {
             .get(&current_stage_name)
             .ok_or_else(|| anyhow::anyhow!("stage '{}' not found", current_stage_name))?;
 
-        // TODO: if !stage.runs.is_empty(), emit ParallelStart + one StageInvoke per run,
-        // save ParallelAwait state. Requires resume to accept --run <name> to identify
-        // which run is completing. Wiring mirrors fan-out parallel execution gap.
-
         let tl_path = self.state.line_file.clone();
+        let input_artifacts = self.stage_input_artifacts(stage, &self.state.artifacts);
+
+        if !stage.runs.is_empty() {
+            // Stage has named run blocks — emit one StageInvoke per run in parallel.
+            let runs = stage.runs.clone();
+            let stage_runner_name = stage.runner.clone();
+            let run_names: Vec<String> = runs.iter().map(|r| r.name.clone()).collect();
+
+            ThrulineEvent::ParallelStart {
+                run_id: self.state.run_id.clone(),
+                ts: chrono::Utc::now(),
+                stage: current_stage_name.clone(),
+                count: runs.len(),
+                concurrency_limit: None,
+            }.emit();
+
+            for run_decl in &runs {
+                let effective_runner_name = run_decl.runner.as_ref().or(stage_runner_name.as_ref());
+                let runner_spec = if let Some(rn) = effective_runner_name {
+                    let runners = self.runners();
+                    let rd = runners.get(rn).ok_or_else(|| anyhow::anyhow!("runner '{}' not found", rn))?;
+                    self.resolve_runner(rd, &tl_path)?
+                } else {
+                    RunnerSpec { name: "default".to_string(), model: None, system: None, tools: vec![], temperature: None, max_tokens: None }
+                };
+
+                let run_outputs: Vec<OutputDecl> = run_decl.outputs.iter()
+                    .map(|a| OutputDecl {
+                        name: a.name.clone(),
+                        kind: match a.kind { ArtifactKind::Path => "path".to_string(), ArtifactKind::Value => "value".to_string() },
+                    })
+                    .collect();
+
+                let prompt = match &run_decl.prompt {
+                    Some(PromptSource::Inline(s)) => Some(s.clone()),
+                    Some(PromptSource::File(p)) => {
+                        let abs = tl_path.parent().unwrap_or(Path::new(".")).join(p);
+                        Some(std::fs::read_to_string(&abs).map_err(|_| anyhow::anyhow!("prompt file not found: {}", abs.display()))?)
+                    }
+                    None => None,
+                };
+
+                ThrulineEvent::StageInvoke {
+                    run_id: self.state.run_id.clone(),
+                    ts: chrono::Utc::now(),
+                    stage: current_stage_name.clone(),
+                    run: Some(run_decl.name.clone()),
+                    runner: runner_spec,
+                    artifacts: input_artifacts.clone(),
+                    prompt,
+                    outputs: run_outputs,
+                    parallel: None,
+                }.emit();
+            }
+
+            self.state.status = RunStatus::ParallelAwait {
+                stage: current_stage_name.clone(),
+                pending_runs: run_names,
+            };
+            self.state.save()?;
+            return Ok(true);
+        }
+
         let runner_spec = if let Some(runner_name) = &stage.runner {
             let runners = self.runners();
             let runner_decl = runners
@@ -246,7 +305,6 @@ impl Runtime {
                 },
             })
             .collect();
-        let input_artifacts = self.stage_input_artifacts(stage, &self.state.artifacts);
 
         let prompt = match &stage.prompt {
             Some(PromptSource::Inline(s)) => Some(s.clone()),
@@ -263,6 +321,7 @@ impl Runtime {
             run_id: self.state.run_id.clone(),
             ts: chrono::Utc::now(),
             stage: current_stage_name.clone(),
+            run: None,
             runner: runner_spec.clone(),
             artifacts: input_artifacts.clone(),
             prompt: prompt.clone(),
@@ -273,7 +332,7 @@ impl Runtime {
 
         self.state.status = RunStatus::AwaitingResume {
             stage: current_stage_name.clone(),
-            parallel: None,  // clear hint — this stage was just invoked
+            parallel: None,
         };
         self.state.save()?;
 
@@ -290,12 +349,66 @@ impl Runtime {
     }
 
     /// Feed completed stage output back into the state machine.
+    /// `run_name` is required when the stage is in `ParallelAwait` (run blocks).
     /// Updates artifact store, evaluates routes, saves state.
     pub fn resume_stage(
         &mut self,
         stage_name: &str,
+        run_name: Option<&str>,
         outputs: Vec<(String, String, bool)>,
     ) -> anyhow::Result<()> {
+        // Handle run-block parallel resumption.
+        if let RunStatus::ParallelAwait { stage, pending_runs } = &self.state.status.clone() {
+            if stage != stage_name {
+                anyhow::bail!(
+                    "run is awaiting stage '{}', cannot resume stage '{}'",
+                    stage, stage_name
+                );
+            }
+            let run = run_name.ok_or_else(|| anyhow::anyhow!(
+                "stage '{}' has parallel runs in progress — use --run <name>", stage_name
+            ))?;
+            if !pending_runs.contains(&run.to_string()) {
+                anyhow::bail!(
+                    "run '{}' is not pending for stage '{}' (pending: {:?})",
+                    run, stage_name, pending_runs
+                );
+            }
+
+            // Store artifacts under the stage namespace.
+            for (name, value, is_file) in &outputs {
+                let key = format!("{}.{}", stage_name, name);
+                if *is_file { self.state.artifacts.set_file(&key, value); }
+                else { self.state.artifacts.set_ref(&key, value); }
+            }
+
+            let remaining: Vec<String> = pending_runs.iter()
+                .filter(|r| r.as_str() != run)
+                .cloned()
+                .collect();
+
+            if remaining.is_empty() {
+                // All runs done — emit parallel_done, add to history, route normally.
+                ThrulineEvent::ParallelDone {
+                    run_id: self.state.run_id.clone(),
+                    ts: chrono::Utc::now(),
+                    stage: stage_name.to_string(),
+                    results: vec![],
+                }.emit();
+                self.state.history.push(stage_name.to_string());
+                self.state.status = RunStatus::Running;  // temporary; overwritten below by routing
+                // Fall through to routing logic by re-entering with a synthetic AwaitingResume.
+                self.route_after_stage(stage_name)?;
+            } else {
+                self.state.status = RunStatus::ParallelAwait {
+                    stage: stage_name.to_string(),
+                    pending_runs: remaining,
+                };
+                self.state.save()?;
+            }
+            return Ok(());
+        }
+
         match &self.state.status {
             RunStatus::AwaitingResume { stage, .. } if stage == stage_name => {}
             RunStatus::AwaitingResume { stage, .. } => anyhow::bail!(
@@ -311,10 +424,7 @@ impl Runtime {
             RunStatus::Running => anyhow::bail!(
                 "run '{}' has not reached a resume point yet", self.state.run_id
             ),
-            RunStatus::ParallelAwait { stage, .. } => anyhow::bail!(
-                "run '{}' is in parallel await for stage '{}'; parallel resume not yet implemented",
-                self.state.run_id, stage
-            ),
+            RunStatus::ParallelAwait { .. } => unreachable!("handled above"),
         }
 
         {
@@ -340,7 +450,12 @@ impl Runtime {
         }
 
         self.state.history.push(stage_name.to_string());
+        self.route_after_stage(stage_name)?;
+        Ok(())
+    }
 
+    /// Evaluate routes after a stage completes and update status + save state.
+    fn route_after_stage(&mut self, stage_name: &str) -> anyhow::Result<()> {
         let pipeline_name = self.state.pipeline.clone();
         let pipeline = self
             .pipeline(&pipeline_name)
@@ -352,10 +467,7 @@ impl Runtime {
         if let Some((route, next_stage)) =
             self.evaluate_routes(stage_name, &routes, &artifacts_snapshot)
         {
-            // Propagate parallel hint from route target to next AwaitingResume
-            let parallel = route.target.parallel_spec.as_ref()
-                .map(|spec| spec.limit);  // None = [*], Some(N) = [*N]
-
+            let parallel = route.target.parallel_spec.as_ref().map(|spec| spec.limit);
             let predicate_desc = format_route_source(&route.source);
             ThrulineEvent::RouteTaken {
                 run_id: self.state.run_id.clone(),
@@ -363,17 +475,14 @@ impl Runtime {
                 from: stage_name.to_string(),
                 to: next_stage.clone(),
                 predicate: predicate_desc,
-            }
-            .emit();
-
+            }.emit();
             self.state.status = RunStatus::AwaitingResume { stage: next_stage, parallel };
         } else {
             ThrulineEvent::PipelineDone {
                 run_id: self.state.run_id.clone(),
                 ts: chrono::Utc::now(),
                 outputs: self.state.artifacts.to_json(),
-            }
-            .emit();
+            }.emit();
             self.state.status = RunStatus::Done;
         }
 
@@ -532,7 +641,7 @@ mod tests {
     fn test_resume_stage_updates_artifacts_and_advances() {
         let mut rt = mk_runtime();
         rt.state.status = crate::runtime::state::RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
-        rt.resume_stage("a", vec![("verdict".to_string(), "ok".to_string(), false)]).unwrap();
+        rt.resume_stage("a", None, vec![("verdict".to_string(), "ok".to_string(), false)]).unwrap();
         assert!(matches!(&rt.state.status, RunStatus::AwaitingResume { stage, .. } if stage == "b"));
         assert_eq!(rt.state.artifacts.get_ref("a.verdict"), Some("ok"));
     }
@@ -702,7 +811,7 @@ mod tests {
     fn test_resume_wrong_stage_errors() {
         let mut rt = mk_runtime();
         rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
-        let err = rt.resume_stage("b", vec![]).unwrap_err();
+        let err = rt.resume_stage("b", None, vec![]).unwrap_err();
         assert!(err.to_string().contains("awaiting stage 'a'"), "got: {}", err);
     }
 
@@ -710,7 +819,7 @@ mod tests {
     fn test_resume_done_run_errors() {
         let mut rt = mk_runtime();
         rt.state.status = RunStatus::Done;
-        let err = rt.resume_stage("a", vec![]).unwrap_err();
+        let err = rt.resume_stage("a", None, vec![]).unwrap_err();
         assert!(err.to_string().contains("already done"), "got: {}", err);
     }
 
@@ -766,7 +875,7 @@ mod tests {
         ];
         let mut rt = Runtime::new(state, items);
         rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
-        rt.resume_stage("a", vec![]).unwrap();
+        rt.resume_stage("a", None, vec![]).unwrap();
         // b should be next, with parallel hint Some(Some(2)) = [*2]
         assert!(matches!(
             &rt.state.status,
@@ -797,7 +906,7 @@ mod tests {
         ];
         let mut rt = Runtime::new(state, items);
         rt.state.status = RunStatus::AwaitingResume { stage: "a".into(), parallel: None };
-        rt.resume_stage("a", vec![]).unwrap();
+        rt.resume_stage("a", None, vec![]).unwrap();
         assert!(matches!(
             &rt.state.status,
             RunStatus::AwaitingResume { stage, parallel } if stage == "b" && *parallel == Some(None)
@@ -897,5 +1006,114 @@ mod tests {
         let stage = stages.get("analyze").unwrap();
         let result = rt.stage_input_artifacts(stage, &rt.state.artifacts.clone());
         assert_eq!(result["code"], "seed-value", "pipeline input should be used as fallback: {}", result);
+    }
+
+    #[test]
+    fn test_run_blocks_emit_parallel_start_and_multiple_stage_invokes() {
+        use crate::runtime::state::RunStatus;
+        use tokio::runtime::Runtime as TokioRuntime;
+
+        let state = RunState::new("r1".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("analyst"),
+            mk_runner("critic"),
+            TlItem::Stage(StageDecl {
+                name: "review".into(),
+                inputs: vec![],
+                outputs: vec![],
+                runner: Some("analyst".into()),
+                prompt: None,
+                runs: vec![
+                    RunDecl {
+                        name: "quality".into(),
+                        runner: None,  // inherits stage runner
+                        prompt: Some(PromptSource::Inline("Check quality.".into())),
+                        outputs: vec![ArtifactDecl {
+                            name: "verdict".into(), source: None, optional: false,
+                            kind: ArtifactKind::Value, seed_path: None,
+                        }],
+                    },
+                    RunDecl {
+                        name: "risk".into(),
+                        runner: Some("critic".into()),
+                        prompt: Some(PromptSource::Inline("Check risks.".into())),
+                        outputs: vec![ArtifactDecl {
+                            name: "risks".into(), source: None, optional: false,
+                            kind: ArtifactKind::Value, seed_path: None,
+                        }],
+                    },
+                ],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "review".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        let driver = crate::driver::stdio::StdioDriver;
+        TokioRuntime::new().unwrap().block_on(rt.advance(&driver)).unwrap();
+
+        assert!(matches!(
+            &rt.state.status,
+            RunStatus::ParallelAwait { stage, pending_runs }
+            if stage == "review" && pending_runs.len() == 2
+                && pending_runs.contains(&"quality".to_string())
+                && pending_runs.contains(&"risk".to_string())
+        ), "expected ParallelAwait with 2 pending runs, got {:?}", rt.state.status);
+    }
+
+    #[test]
+    fn test_run_blocks_parallel_resume_completes_stage_on_last_run() {
+        use crate::runtime::state::RunStatus;
+
+        let state = RunState::new("r1".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("analyst"),
+            TlItem::Stage(StageDecl {
+                name: "review".into(),
+                inputs: vec![],
+                outputs: vec![],
+                runner: Some("analyst".into()),
+                prompt: None,
+                runs: vec![
+                    RunDecl {
+                        name: "quality".into(),
+                        runner: None,
+                        prompt: Some(PromptSource::Inline("Check quality.".into())),
+                        outputs: vec![ArtifactDecl {
+                            name: "verdict".into(), source: None, optional: false,
+                            kind: ArtifactKind::Value, seed_path: None,
+                        }],
+                    },
+                    RunDecl {
+                        name: "risk".into(),
+                        runner: None,
+                        prompt: Some(PromptSource::Inline("Check risks.".into())),
+                        outputs: vec![ArtifactDecl {
+                            name: "risks".into(), source: None, optional: false,
+                            kind: ArtifactKind::Value, seed_path: None,
+                        }],
+                    },
+                ],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "review".into(), routes: vec![],
+            }),
+        ];
+        let mut rt = Runtime::new(state, items);
+        rt.state.status = RunStatus::ParallelAwait {
+            stage: "review".into(),
+            pending_runs: vec!["quality".to_string(), "risk".to_string()],
+        };
+
+        // First run completes — still waiting.
+        rt.resume_stage("review", Some("quality"), vec![("verdict".into(), "approved".into(), false)]).unwrap();
+        assert!(matches!(&rt.state.status, RunStatus::ParallelAwait { pending_runs, .. } if pending_runs.len() == 1));
+        assert_eq!(rt.state.artifacts.get_ref("review.verdict"), Some("approved"));
+
+        // Second run completes — stage done, pipeline done.
+        rt.resume_stage("review", Some("risk"), vec![("risks".into(), "none".into(), false)]).unwrap();
+        assert!(matches!(&rt.state.status, RunStatus::Done));
+        assert_eq!(rt.state.artifacts.get_ref("review.risks"), Some("none"));
+        assert!(rt.state.history.contains(&"review".to_string()));
     }
 }

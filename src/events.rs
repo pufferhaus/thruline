@@ -35,6 +35,10 @@ pub enum ThrulineEvent {
         run_id: String,
         ts: DateTime<Utc>,
         stage: String,
+        /// Present for run-block invocations — identifies which named run within the stage.
+        /// The harness must pass `--run <name>` when resuming this invocation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run: Option<String>,
         runner: RunnerSpec,
         artifacts: serde_json::Value,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,10 +46,6 @@ pub enum ThrulineEvent {
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         outputs: Vec<OutputDecl>,
         /// Present when the route to this stage carried a [*] or [*N] parallel hint.
-        /// The harness should invoke this stage in subagent mode.
-        /// None = single-agent invocation.
-        /// Some(None) = [*]: use subagents, harness decides count.
-        /// Some(Some(N)) = [*N]: use up to N subagents.
         #[serde(skip_serializing_if = "Option::is_none")]
         parallel: Option<Option<u32>>,
     },
@@ -130,6 +130,7 @@ mod tests {
             run_id: "abc".to_string(),
             ts: Utc::now(),
             stage: "interview".to_string(),
+            run: None,
             runner: RunnerSpec {
                 name: "interviewer".to_string(),
                 model: Some("claude-opus-4-8".to_string()),

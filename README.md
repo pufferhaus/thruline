@@ -1,8 +1,34 @@
-# Thruline
+```
+  ████████╗██╗  ██╗██████╗ ██╗   ██╗██╗     ██╗███╗   ██╗███████╗
+  ╚══██╔══╝██║  ██║██╔══██╗██║   ██║██║     ██║████╗  ██║██╔════╝
+     ██║   ███████║██████╔╝██║   ██║██║     ██║██╔██╗ ██║█████╗
+     ██║   ██╔══██║██╔══██╗██║   ██║██║     ██║██║╚██╗██║██╔══╝
+     ██║   ██║  ██║██║  ██║╚██████╔╝███████╗██║██║ ╚████║███████╗
+     ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
+```
 
-**Deterministic multiagent workflows, expressed as code.**
+**Agent workflows as code.**
 
-Thruline is a DSL and runtime for defining agent pipelines where every handoff, branch, and artifact is explicit. You describe what each agent produces and how outputs route to the next agent. Thruline runs it, checkpoints state after every step, and resumes from exactly where it stopped.
+[![CI](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pufferhaus/thruline)](https://github.com/pufferhaus/thruline/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+---
+
+## Install
+
+```bash
+# Homebrew
+brew tap pufferhaus/tap
+brew install thruline
+
+# From source (requires Rust 1.70+)
+cargo install --git https://github.com/pufferhaus/thruline
+```
+
+---
+
+Thruline is a DSL and runtime for deterministic multiagent workflows. You describe what each agent produces, how outputs route to the next agent, and Thruline runs it — checkpointing state after every step so a crashed process resumes exactly where it stopped.
 
 ```
 config {
@@ -99,7 +125,7 @@ config {
 ```
 
 ### `runner`
-A reusable agent definition. All fields are optional — absent fields inherit from `config` or the harness default.
+A reusable agent definition. All fields are optional.
 
 ```
 runner analyst {
@@ -112,7 +138,7 @@ runner analyst {
 ```
 
 ### `stage`
-A single agent invocation. Declares what it consumes, what it produces, and how to run it.
+A single agent invocation. Stages can also contain `run` blocks for parallel invocations.
 
 ```
 stage review {
@@ -123,22 +149,38 @@ stage review {
   runner: analyst
   prompt: file("prompts/review.md")
 }
+
+// Parallel run blocks — all run simultaneously, stage completes when all finish
+stage dual-review {
+  runner: analyst            // default runner for runs that don't declare one
+  run quality {
+    prompt: "Assess correctness and completeness."
+    out: verdict as value
+         notes   as value
+  }
+  run risk {
+    runner: critic
+    prompt: "Identify risks and failure modes."
+    out: risks    as value
+         severity as value
+  }
+}
 ```
 
-Artifacts flow automatically — if `classify` outputs `language as value`, any later stage can declare `in: language as value` and receive it without explicit wiring.
+Artifacts flow automatically — if `classify` outputs `language as value`, any later stage can declare `in: language as value` without explicit wiring.
 
 ### `thruline`
-The routing declaration: which stage runs first and how outputs branch.
+The routing declaration.
 
 ```
 thruline feature-dev {
   inputs {
-    brief    as path      // required input
-    context? as value     // optional input
+    brief    as path
+    context? as value
   }
   start: plan
   routes {
-    plan.verdict == "rejected" -> plan     // retry loop
+    plan.verdict == "rejected" -> plan
     plan.verdict == "approved" -> implement
     implement -> review[*3]               // parallel hint: up to 3 subagents
     review[*] -> summarize
@@ -172,20 +214,8 @@ thruline runs                              # List all runs
 thruline status   <run-id>                 # Show run state
 thruline resume   <run-id> \
   --stage <name>                           # Feed agent output back
+  --run <run-name>                         # Required for run-block stages
   --artifact key=value
-```
-
----
-
-## Install
-
-```bash
-# Homebrew
-brew tap pufferhaus/tap
-brew install thruline
-
-# From source (requires Rust 1.70+)
-cargo install --git https://github.com/pufferhaus/thruline
 ```
 
 ---
@@ -195,7 +225,7 @@ cargo install --git https://github.com/pufferhaus/thruline
 | Example | What it shows |
 |---|---|
 | [`examples/sentiment/`](examples/sentiment/) | Predicate routing, two runners, pipeline inputs |
-| [`examples/code-review/`](examples/code-review/) | Retry loop, pass/fail routing, two-stage revision |
+| [`examples/code-review/`](examples/code-review/) | Retry loop, pass/fail routing |
 
 ```bash
 # Sentiment analysis
@@ -211,27 +241,15 @@ ANTHROPIC_API_KEY=sk-... thruline run examples/code-review/review.line \
 
 ## Events (NDJSON)
 
-Thruline communicates via NDJSON on stdout:
-
 ```json
-{"event":"pipeline_start","run_id":"a1b2c3d4","pipeline":"review","ts":"..."}
+{"event":"pipeline_start","run_id":"a1b2c3d4","pipeline":"review"}
 {"event":"stage_invoke","stage":"assess","runner":{"name":"analyst","model":"claude-opus-4-8"},"artifacts":{"code":"..."},"outputs":[{"name":"verdict","kind":"value"}]}
 {"event":"route_taken","from":"assess","to":"report","predicate":"assess.verdict == \"approved\""}
 {"event":"pipeline_done","run_id":"a1b2c3d4","outputs":{"assess.verdict":"approved","report.summary":"..."}}
 ```
 
-The `stage_invoke` event embeds the full runner spec — harnesses don't need ambient lookup.
+For `run` blocks, `stage_invoke` includes a `run` field identifying the named run. Resume each with `--run <name>`.
 
 ---
-
-## Status
-
-Core execution is complete: sequential stages, predicate routing, retry loops, pipeline inputs, checkpoint/resume, and the API driver.
-
-Two features are parsed and validated but not yet wired in the runtime:
-- **Parallel fan-out** (`[*N]`/`[*]`) — hint passes to harness; full scheduler pending
-- **`run` blocks** (named parallel invocations within a stage)
-
-See [`docs/LANGUAGE.md`](docs/LANGUAGE.md) for the full language reference.
 
 [thruline.work](https://thruline.work)

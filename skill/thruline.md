@@ -41,19 +41,25 @@ Name each task `[<pipeline>] <stage>  (<runner> / <model>)` if the runner info i
 
 ### At `stage_invoke`
 
-Update the task for the invoking stage:
+Update the task for the invoking stage and spawn the agent.
+
+**If the event has a `run` field** (e.g. `"run": "quality"`), this is a run-block invocation. Multiple `stage_invoke` events will arrive for the same stage — one per run block. Spawn a separate agent per run. When resuming, include `--run <name>`:
+
+```bash
+thruline resume <run-id> --stage <stage> --run <run-name> --artifact key=value
+```
+
+The stage task stays `in_progress` until all runs report back and `parallel_done` fires.
+
+**If the event has a `parallel` field** (route-level fan-out hint), tell the agent it should use subagents:
+
+- `"parallel": null` or `"parallel": {}` — append: *"You may spawn subagents to complete this task in parallel. Synthesize their results before returning your output."*
+- `"parallel": {"limit": N}` — append: *"You may spawn up to N subagents to complete this task in parallel. Synthesize their results before returning your output."*
 
 ```
 TaskUpdate: status → in_progress
             description → "running — <artifact-name>: …"  (if prior outputs exist)
 ```
-
-Then spawn the agent. If the `stage_invoke` event contains a `parallel` field, tell the agent it should use subagents:
-
-- `"parallel": null` or `"parallel": {}` — append to the agent's prompt: *"You may spawn subagents to complete this task in parallel. Synthesize their results before returning your output."*
-- `"parallel": {"limit": N}` — append: *"You may spawn up to N subagents to complete this task in parallel. Synthesize their results before returning your output."*
-
-The agent's runner spec and declared outputs are unchanged — the parallel hint only affects how the agent chooses to work internally.
 
 ### After agent completes and resume succeeds
 
@@ -65,6 +71,10 @@ TaskUpdate: status → completed
 ```
 
 If a `route_taken` event names the next stage, update that task to `in_progress`.
+
+### At `parallel_done`
+
+Update the stage task to `completed`. All run-block agents for this stage have finished.
 
 ### At `pipeline_done`
 
@@ -99,10 +109,10 @@ When invoking a stage's agent, include these instructions in the prompt:
 | Event | Task action | Conversation output |
 |-------|-------------|---------------------|
 | `pipeline_start` | Create one task per stage (pending) | None |
-| `stage_invoke` | Set stage task → in_progress | None (task panel shows it) |
+| `stage_invoke` | Set stage task → in_progress; if has `run` field, spawn per-run agent | None |
 | `stage_complete` | Set stage task → completed with artifact values | None |
 | `route_taken` | — | None |
-| `parallel_start` | Set stage task description to "fan-out: N slots" | None |
+| `parallel_start` | Set stage task description to "parallel: N runs" | None |
 | `parallel_done` | Set stage task → completed | None |
 | `pipeline_done` | Set any open tasks → completed | `✓ pipeline_done [run: <id>]` |
 | `pipeline_error` | Set failing task description to error | Error message |
