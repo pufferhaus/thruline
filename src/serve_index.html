@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thruline Runs</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 2rem; }
+    h1 { font-size: 1.1rem; color: #58a6ff; margin-bottom: 1.5rem; letter-spacing: 0.05em; }
+    .run { border: 1px solid #30363d; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .run-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+    .run-id { font-weight: bold; color: #58a6ff; font-size: 0.9rem; }
+    .pipeline { color: #8b949e; font-size: 0.85rem; margin-left: 0.5rem; }
+    .status { font-size: 0.8rem; padding: 2px 8px; border-radius: 12px; }
+    .status-done { background: #1a3a1a; color: #3fb950; }
+    .status-running, .status-awaiting { background: #2d2a1a; color: #d29922; }
+    .status-failed { background: #3a1a1a; color: #f85149; }
+    .status-other { background: #1a1a2d; color: #8b949e; }
+    .started { color: #484f58; font-size: 0.8rem; }
+    details { margin-top: 0.5rem; }
+    summary { cursor: pointer; color: #8b949e; font-size: 0.8rem; user-select: none; }
+    pre { background: #161b22; border: 1px solid #21262d; border-radius: 4px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.8rem; overflow-x: auto; color: #c9d1d9; }
+    .empty { color: #484f58; font-style: italic; }
+    .refresh { color: #484f58; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <h1>thruline runs</h1>
+  <div id="runs"><span class="empty">Loading...</span></div>
+  <p class="refresh" id="ts"></p>
+  <script>
+    function statusClass(s) {
+      if (s === 'Done') return 'done';
+      if (s === 'Running') return 'running';
+      if (s && s.AwaitingResume) return 'awaiting';
+      if (s && s.Failed) return 'failed';
+      return 'other';
+    }
+    function statusText(s) {
+      if (s === 'Done') return 'done';
+      if (s === 'Running') return 'running';
+      if (s === 'Failed') return 'failed';
+      if (s && s.AwaitingResume) return 'awaiting: ' + s.AwaitingResume.stage;
+      if (s && s.Failed) return 'failed: ' + s.Failed;
+      if (s && s.ParallelAwait) return 'parallel: ' + s.ParallelAwait.stage;
+      return JSON.stringify(s);
+    }
+    async function load() {
+      try {
+        const runs = await fetch('/api/runs').then(r => r.json());
+        const el = document.getElementById('runs');
+        if (!runs.length) { el.innerHTML = '<span class="empty">No runs yet.</span>'; return; }
+        el.innerHTML = runs.map(r => {
+          const sc = statusClass(r.status);
+          const artifactCount = Object.keys(r.artifacts?.refs || {}).length + Object.keys(r.artifacts?.files || {}).length;
+          return `<div class="run">
+            <div class="run-header">
+              <span><span class="run-id">${r.run_id}</span><span class="pipeline">${r.pipeline}</span></span>
+              <span class="status status-${sc}">${statusText(r.status)}</span>
+            </div>
+            <div class="started">${r.started}</div>
+            ${artifactCount > 0 ? `<details><summary>${artifactCount} artifact${artifactCount !== 1 ? 's' : ''}</summary><pre>${JSON.stringify(r.artifacts, null, 2)}</pre></details>` : ''}
+          </div>`;
+        }).join('');
+        document.getElementById('ts').textContent = 'updated ' + new Date().toLocaleTimeString();
+      } catch(e) {
+        document.getElementById('runs').innerHTML = '<span class="empty">Error: ' + e.message + '</span>';
+      }
+    }
+    load();
+    setInterval(load, 3000);
+  </script>
+</body>
+</html>

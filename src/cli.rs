@@ -35,6 +35,12 @@ pub enum Commands {
         #[arg(long = "input")]
         inputs: Vec<String>,
     },
+    /// Serve a local web UI for inspecting runs
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value = "7371")]
+        port: u16,
+    },
     /// Start the language server (communicates via stdio, LSP protocol)
     Lsp,
     /// Feed agent output back to a suspended run
@@ -58,6 +64,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Inspect  { file }  => cmd_inspect(&file),
         Commands::Runs               => cmd_runs(),
         Commands::Status { run_id }  => cmd_status(&run_id),
+        Commands::Serve { port }     => cmd_serve(port).await,
         Commands::Lsp                => cmd_lsp().await,
         Commands::Run { file, pipeline, driver, inputs } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs).await,
         Commands::Resume { run_id, stage, run, artifacts } => cmd_resume(&run_id, &stage, run.as_deref(), &artifacts).await,
@@ -527,6 +534,10 @@ pub async fn cmd_resume(
     }
 
     Ok(())
+}
+
+pub async fn cmd_serve(port: u16) -> anyhow::Result<()> {
+    crate::serve::run_server(port).await
 }
 
 pub async fn cmd_lsp() -> anyhow::Result<()> {

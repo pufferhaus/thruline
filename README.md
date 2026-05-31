@@ -271,6 +271,7 @@ thruline run      <file.line> \
   --input file=file:///abs/path
 thruline runs                              # List all runs
 thruline status   <run-id>                 # Show run state
+thruline serve [--port 7371]               # Local run inspection UI at http://localhost:7371
 thruline resume   <run-id> \
   --stage <name>                           # Feed agent output back
   --run <run-name>                         # Required for run-block stages

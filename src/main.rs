@@ -5,6 +5,7 @@ mod events;
 mod lsp;
 mod parser;
 mod runtime;
+mod serve;
 mod validator;
 
 #[tokio::main]
