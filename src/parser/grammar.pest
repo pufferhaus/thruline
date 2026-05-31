@@ -4,7 +4,7 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
 // Primitives
-identifier  = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
+identifier  = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 model_id    = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-" | ".")* }
 quoted_str  = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 pos_int     = @{ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }

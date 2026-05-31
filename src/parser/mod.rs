@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn test_parse_runner_inline_system() {
         let src = r#"
-runner my-runner {
+runner my_runner {
   model: claude-sonnet-4-6
   system: "You are helpful."
 }
@@ -316,7 +316,7 @@ runner my-runner {
         let items = parse_str(src).unwrap();
         assert_eq!(items.len(), 1);
         let TlItem::Runner(r) = &items[0] else { panic!("expected runner") };
-        assert_eq!(r.name, "my-runner");
+        assert_eq!(r.name, "my_runner");
         assert_eq!(r.model, "claude-sonnet-4-6");
         assert!(matches!(&r.system, Some(PromptSource::Inline(s)) if s == "You are helpful."));
     }
@@ -324,7 +324,7 @@ runner my-runner {
     #[test]
     fn test_parse_runner_file_system() {
         let src = r#"
-runner eng-lead {
+runner eng_lead {
   model: claude-opus-4-8
   system: file("prompts/eng-lead.md")
   tools: [read_file, write_file]
@@ -347,7 +347,7 @@ stage interview {
   in: brief? as path("specs/brief.md")
   out: spec as path
        verdict as value
-  runner: feature-interviewer
+  runner: feature_interviewer
   prompt: file("prompts/task.md")
 }
 "#;
@@ -364,14 +364,14 @@ stage interview {
         assert_eq!(s.outputs[0].kind, ArtifactKind::Path);
         assert_eq!(s.outputs[1].name, "verdict");
         assert_eq!(s.outputs[1].kind, ArtifactKind::Value);
-        assert_eq!(s.runner, Some("feature-interviewer".to_string()));
+        assert_eq!(s.runner, Some("feature_interviewer".to_string()));
         assert!(matches!(&s.prompt, Some(PromptSource::File(p)) if p == "prompts/task.md"));
     }
 
     #[test]
     fn test_parse_pipeline_routes() {
         let src = r#"
-thruline feature-dev {
+thruline feature_dev {
   start: interview
   routes {
     interview.verdict == "approved" -> review
@@ -384,7 +384,7 @@ thruline feature-dev {
 "#;
         let items = parse_str(src).unwrap();
         let TlItem::Pipeline(p) = &items[0] else { panic!() };
-        assert_eq!(p.name, "feature-dev");
+        assert_eq!(p.name, "feature_dev");
         assert_eq!(p.start, "interview");
         assert_eq!(p.routes.len(), 5);
 
@@ -484,11 +484,11 @@ stage review {
   runner: analyst
   run fast {
     prompt: "Quick check."
-    out: quick-verdict as value
+    out: quick_verdict as value
   }
   run thorough {
     runner: critic
-    out: detailed-verdict as value
+    out: detailed_verdict as value
   }
 }
 "#;
@@ -503,18 +503,18 @@ stage review {
         assert_eq!(fast.runner, None);
         assert!(matches!(&fast.prompt, Some(PromptSource::Inline(p)) if p == "Quick check."));
         assert_eq!(fast.outputs.len(), 1);
-        assert_eq!(fast.outputs[0].name, "quick-verdict");
+        assert_eq!(fast.outputs[0].name, "quick_verdict");
 
         let thorough = &s.runs[1];
         assert_eq!(thorough.name, "thorough");
         assert_eq!(thorough.runner, Some("critic".to_string()));
-        assert_eq!(thorough.outputs[0].name, "detailed-verdict");
+        assert_eq!(thorough.outputs[0].name, "detailed_verdict");
     }
 
     #[test]
     fn test_parse_pipeline_with_inputs() {
         let src = r#"
-thruline code-review {
+thruline code_review {
   inputs {
     code     as path
     language as value

@@ -21,7 +21,7 @@ runner writer {
   max_tokens: 512
 }
 
-thruline code-review {
+thruline code_review {
   inputs {
     code as path
   }

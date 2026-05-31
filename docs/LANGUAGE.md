@@ -14,6 +14,12 @@ Single-line only. No block comments.
 
 ---
 
+## Identifiers
+
+Names for runners, stages, pipelines, artifacts, and run blocks follow `[A-Za-z][A-Za-z0-9_]*` — letters, digits, and underscores; no hyphens. Model IDs (in `model:` fields) still allow hyphens and dots (e.g. `claude-opus-4-8`).
+
+---
+
 ## Imports
 
 ```
@@ -232,7 +238,7 @@ The stage-level `runner:` field acts as the default runner for any `run` block t
 **Example:**
 
 ```
-stage dual-review {
+stage dual_review {
   runner: analyst            // default for runs without their own runner
   run quality {
     prompt: "Assess correctness and completeness."
@@ -298,7 +304,7 @@ This keeps runners atomic (a runner defines a single task) while routes signal w
 #### Example
 
 ```
-thruline feature-dev {
+thruline feature_dev {
   start: interview
   routes {
     interview.verdict == "rejected" -> interview   // retry loop
@@ -424,5 +430,3 @@ Typos in model identifiers fail at API call time, not validate time.
 **No string escape sequences**
 Quoted strings terminate at the first `"` — backslash escaping is not supported. Use `file("path")` for system prompts or prompts containing quotes or special characters.
 
-**Identifier syntax allows `-`**
-Hyphens in identifiers (`my-runner`, `dual-review`) cause friction when artifact keys are used as JSON object keys, since hyphenated keys require quoting in most languages.
