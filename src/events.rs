@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+fn default_protocol_version() -> String {
+    "1".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunnerSpec {
     pub name: String,
@@ -29,6 +33,8 @@ pub enum ThrulineEvent {
         run_id: String,
         ts: DateTime<Utc>,
         pipeline: String,
+        #[serde(default = "default_protocol_version")]
+        protocol: String,
         inputs: serde_json::Value,
     },
     StageInvoke {
@@ -117,11 +123,13 @@ mod tests {
             run_id: "abc".to_string(),
             ts: Utc::now(),
             pipeline: "feature-dev".to_string(),
+            protocol: "1".to_string(),
             inputs: serde_json::Value::Null,
         };
         let s = serde_json::to_string(&ev).unwrap();
         assert!(s.contains(r#""event":"pipeline_start""#));
         assert!(s.contains(r#""pipeline":"feature-dev""#));
+        assert!(s.contains(r#""protocol":"1""#));
     }
 
     #[test]

@@ -316,6 +316,7 @@ pub async fn cmd_run(
                 run_id: run_id.clone(),
                 ts: chrono::Utc::now(),
                 pipeline: pipeline.clone(),
+                protocol: "1".to_string(),
                 inputs: serde_json::Value::Null,
             }.emit();
             let driver = crate::driver::stdio::StdioDriver;
@@ -346,6 +347,7 @@ pub async fn cmd_run(
                 run_id: run_id.clone(),
                 ts: chrono::Utc::now(),
                 pipeline: pipeline.clone(),
+                protocol: "1".to_string(),
                 inputs: serde_json::Value::Null,
             }.emit();
 

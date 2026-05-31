@@ -105,6 +105,7 @@ fn test_run_stdio_emits_pipeline_start_and_stage_invoke() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Should emit pipeline_start and stage_invoke as NDJSON lines
     assert!(stdout.contains(r#""event":"pipeline_start""#), "got: {}", stdout);
+    assert!(stdout.contains(r#""protocol":"1""#), "got: {}", stdout);
     assert!(stdout.contains(r#""event":"stage_invoke""#), "got: {}", stdout);
     assert!(stdout.contains(r#""stage":"a""#), "got: {}", stdout);
     // Runner spec should be embedded in stage_invoke
