@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "thruline",
-  "version": "0.1.0",
-  "description": "Deterministic multiagent pipeline runner. Skill for driving .line pipelines from Claude Code.",
+  "version": "0.1.1",
+  "description": "Skills for running and creating thruline workflows from Claude Code.",
   "author": {
     "name": "imi",
     "email": "pufferhaus@fugu.estate"

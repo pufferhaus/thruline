@@ -17,6 +17,8 @@
 
 ## Install
 
+### Binary
+
 ```bash
 # Homebrew
 brew tap pufferhaus/tap
@@ -25,6 +27,30 @@ brew install thruline
 # From source (requires Rust 1.70+)
 cargo install --git https://github.com/pufferhaus/thruline
 ```
+
+### Claude Code skills
+
+Two skills ship with thruline — install them as a Claude Code plugin:
+
+```bash
+claude plugin install pufferhaus/thruline
+```
+
+This gives you:
+
+| Skill | What it does |
+|---|---|
+| `/thruline <file.line>` | Run a workflow in harness mode — drives agents through Claude Code, shows live stage status |
+| `/create-thruline` | Scaffold a new `.line` file — asks about your goals and generates a validated workflow |
+
+### Other harnesses
+
+The skills are plain Markdown files in [`skill/`](skill/). Copy them wherever your harness looks for agent instructions, or reference them directly:
+
+- [`skill/thruline.md`](skill/thruline.md) — full harness protocol: how to read events, spawn agents, call `resume`, and track stage state
+- [`skill/create-thruline.md`](skill/create-thruline.md) — scaffolding guide with language quick reference
+
+Any harness that can read the [NDJSON event protocol](#events-ndjson) can drive thruline — the binary just reads from stdin/stdout.
 
 ---
 
