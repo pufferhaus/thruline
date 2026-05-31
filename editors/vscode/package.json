@@ -1,0 +1,26 @@
+{
+  "name": "thruline",
+  "displayName": "Thruline",
+  "description": "Syntax highlighting for .line workflow files",
+  "version": "0.1.2",
+  "publisher": "pufferhaus",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pufferhaus/thruline"
+  },
+  "contributes": {
+    "languages": [{
+      "id": "line",
+      "aliases": ["Thruline", "line"],
+      "extensions": [".line"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "line",
+      "scopeName": "source.line",
+      "path": "../thruline.tmLanguage.json"
+    }]
+  }
+}

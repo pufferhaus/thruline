@@ -54,6 +54,39 @@ Any harness that can read the [NDJSON event protocol](#events-ndjson) can drive 
 
 ---
 
+## Editor Support
+
+### VS Code
+
+Install the Thruline extension for `.line` syntax highlighting:
+
+```bash
+# Manual install
+mkdir -p ~/.vscode/extensions/thruline
+cp -r editors/vscode/* ~/.vscode/extensions/thruline/
+cp editors/thruline.tmLanguage.json ~/.vscode/extensions/thruline/
+```
+
+Or use the extension from `editors/vscode/` directly in VS Code's Extensions panel.
+
+### Zed
+
+Add to `~/.config/zed/settings.json`:
+```json
+{
+  "file_types": {
+    "Thruline": ["line"]
+  }
+}
+```
+Then point Zed at `editors/thruline.tmLanguage.json` as a custom grammar.
+
+### Neovim / Other editors
+
+The TextMate grammar at `editors/thruline.tmLanguage.json` works with any editor that supports TextMate grammars. For Neovim with nvim-treesitter, a tree-sitter grammar is planned.
+
+---
+
 Thruline is a DSL and runtime for deterministic multiagent workflows. You describe what each agent produces, how outputs route to the next agent, and Thruline runs it — checkpointing state after every step so a crashed process resumes exactly where it stopped.
 
 ```

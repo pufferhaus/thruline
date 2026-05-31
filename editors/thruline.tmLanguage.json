@@ -1,0 +1,74 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Thruline",
+  "fileTypes": ["line"],
+  "scopeName": "source.line",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constraint" },
+    { "include": "#fanout" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.double-slash.line",
+      "match": "//.*$"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.declaration.line",
+          "match": "\\b(config|runner|stage|thruline|run|import)\\b"
+        },
+        {
+          "name": "keyword.control.field.line",
+          "match": "\\b(start|routes|inputs|in|out|as|path|value|file|model|system|tools|temperature|max_tokens|max)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.line",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.comparison.line",
+          "match": "==|!="
+        },
+        {
+          "name": "punctuation.definition.block.line",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.separator.line",
+          "match": "[,:\\[\\]()]"
+        },
+        {
+          "name": "keyword.operator.optional.line",
+          "match": "\\?"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.line",
+      "begin": "\"",
+      "end": "\""
+    },
+    "numbers": {
+      "name": "constant.numeric.line",
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+    },
+    "constraint": {
+      "name": "keyword.other.constraint.line",
+      "match": "\\bin\\b"
+    },
+    "fanout": {
+      "name": "keyword.operator.fanout.line",
+      "match": "\\[\\*[0-9]*\\]"
+    }
+  }
+}
