@@ -1,4 +1,5 @@
 pub mod api;
+pub mod bedrock;
 pub mod openai;
 pub mod ollama;
 pub mod stdio;

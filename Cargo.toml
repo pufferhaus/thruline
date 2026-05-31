@@ -34,6 +34,8 @@ async-trait = "0.1"
 tower-lsp = "0.20"
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
+aws-config = { version = "1.8.17", features = ["behavior-version-latest"] }
+aws-sdk-bedrockruntime = "1.132.0"
 
 [dev-dependencies]
 tempfile = "3"
