@@ -279,7 +279,7 @@ fn test_api_driver_no_key_does_not_emit_pipeline_start() {
     let tl = write_tl(dir.path(), "test.line", BASIC_TL);
 
     let out = thruline()
-        .args(["run", tl.to_str().unwrap(), "--driver", "api"])
+        .args(["run", tl.to_str().unwrap(), "--driver", "anthropic"])
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("THRULINE_DEFAULT_MODEL")
         .output().unwrap();

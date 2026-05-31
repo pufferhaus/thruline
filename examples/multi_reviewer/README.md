@@ -9,7 +9,7 @@ Demonstrates: `run` blocks (parallel invocations within a stage), value constrai
 ## Run standalone
 
 ```bash
-ANTHROPIC_API_KEY=sk-... thruline run review.line --driver api \
+ANTHROPIC_API_KEY=sk-... thruline run review.line --driver anthropic \
   --input code=file:///path/to/file.rs
 ```
 

@@ -4,7 +4,7 @@ Classifies text sentiment (positive / negative / neutral) and routes to a tailor
 
 ## Run standalone (Anthropic API)
 
-    ANTHROPIC_API_KEY=sk-... thruline run pipeline.line --driver api --input text="I love Rust!"
+    ANTHROPIC_API_KEY=sk-... thruline run pipeline.line --driver anthropic --input text="I love Rust!"
 
 ## Run in harness mode (stdio driver)
 

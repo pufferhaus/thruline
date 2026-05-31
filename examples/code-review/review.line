@@ -4,7 +4,7 @@
 //   code  as path   — path to the file or diff to review
 //
 // Run:
-//   thruline run review.line --driver api --input code=file:///path/to/file.rs
+//   thruline run review.line --driver anthropic --input code=file:///path/to/file.rs
 
 config {
   model: claude-sonnet-4-6

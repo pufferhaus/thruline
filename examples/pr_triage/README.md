@@ -7,6 +7,6 @@ Classifies a PR description and routes to category-specific acknowledgment.
 ## Run
 
 ```bash
-ANTHROPIC_API_KEY=sk-... thruline run triage.line --driver api \
+ANTHROPIC_API_KEY=sk-... thruline run triage.line --driver anthropic \
   --input description="Add retry logic to the payment processor on timeout"
 ```

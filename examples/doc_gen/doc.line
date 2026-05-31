@@ -1,6 +1,6 @@
 // Documentation generator: draft docs, review, revise until approved (max 4 attempts).
 //
-// Run: thruline run doc.line --driver api --input code=file:///path/to/module.rs
+// Run: thruline run doc.line --driver anthropic --input code=file:///path/to/module.rs
 
 config {
   model: claude-sonnet-4-6

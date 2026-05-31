@@ -1,6 +1,6 @@
 // PR triage: classify a PR description and route to category-specific acknowledgment.
 //
-// Run: thruline run triage.line --driver api --input description="Add retry logic to payment processor"
+// Run: thruline run triage.line --driver anthropic --input description="Add retry logic to payment processor"
 
 config {
   model: claude-sonnet-4-6

@@ -376,8 +376,6 @@ State persists to `~/.thruline/runs/<run-id>/state.json`, enabling resume after 
 
 Model resolution: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
 
-> **Note:** `--driver api` is a deprecated alias for `--driver anthropic` and will continue to work.
-
 ---
 
 ## Event Protocol (NDJSON)

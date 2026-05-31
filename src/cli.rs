@@ -355,7 +355,7 @@ pub async fn cmd_run(
                 return Err(e);
             }
         }
-        "anthropic" | "api" => {
+        "anthropic" => {
             let driver = crate::driver::api::ApiDriver::from_env(config_model)?;
             crate::events::ThrulineEvent::PipelineStart {
                 run_id: run_id.clone(),

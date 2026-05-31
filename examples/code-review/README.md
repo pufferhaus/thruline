@@ -6,7 +6,7 @@ Reviews code, loops on rejection until approved, produces a final summary.
 
 ## Run standalone (Anthropic API)
 
-    ANTHROPIC_API_KEY=sk-... thruline run review.line --driver api \
+    ANTHROPIC_API_KEY=sk-... thruline run review.line --driver anthropic \
       --input code=file:///path/to/file.rs
 
 ## Run in harness mode (Claude Code)

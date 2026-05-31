@@ -9,6 +9,6 @@ Demonstrates: retry loop with `[max:N]` cap, value constraints on verdict, optio
 ## Run
 
 ```bash
-ANTHROPIC_API_KEY=sk-... thruline run doc.line --driver api \
+ANTHROPIC_API_KEY=sk-... thruline run doc.line --driver anthropic \
   --input code=file:///path/to/module.rs
 ```

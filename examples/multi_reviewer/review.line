@@ -1,6 +1,6 @@
 // Multi-perspective code review using run blocks (parallel).
 //
-// Run: thruline run review.line --driver api --input code=file:///path/to/file.rs
+// Run: thruline run review.line --driver anthropic --input code=file:///path/to/file.rs
 
 config {
   model: claude-sonnet-4-6
