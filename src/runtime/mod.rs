@@ -6,10 +6,16 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::ast::*;
-use crate::driver::{AgentInvocation, Driver};
+use crate::driver::{AgentInvocation, AgentResult, Driver};
 use crate::events::{OutputDecl, RunnerSpec, ThrulineEvent};
 use crate::runtime::artifact::ArtifactStore;
 use crate::runtime::state::{RunState, RunStatus};
+
+pub enum AdvanceOutcome {
+    Invoked { stage: String, result: AgentResult },
+    RunsDispatched { stage: String },
+    Idle,
+}
 
 pub struct Runtime {
     pub state: RunState,
@@ -202,9 +208,64 @@ impl Runtime {
         Ok(())
     }
 
+    /// Build the list of AgentInvocations for a stage in ParallelAwait status.
+    /// Used by the API driver to invoke run blocks sequentially.
+    pub fn pending_run_invocations(&self) -> anyhow::Result<Vec<(String, crate::driver::AgentInvocation)>> {
+        let RunStatus::ParallelAwait { stage, pending_runs } = &self.state.status else {
+            anyhow::bail!("not in ParallelAwait");
+        };
+        let stage_name = stage.clone();
+        let stages = self.stages();
+        let stage_decl = stages
+            .get(stage_name.as_str())
+            .ok_or_else(|| anyhow::anyhow!("stage '{}' not found", stage_name))?;
+        let tl_path = self.state.line_file.clone();
+        let input_artifacts = self.stage_input_artifacts(stage_decl, &self.state.artifacts);
+        let stage_runner = stage_decl.runner.clone();
+
+        let mut result = Vec::new();
+        for run_name in pending_runs {
+            let run_decl = stage_decl.runs.iter()
+                .find(|r| &r.name == run_name)
+                .ok_or_else(|| anyhow::anyhow!("run '{}' not found in stage '{}'", run_name, stage_name))?;
+
+            let effective_runner = run_decl.runner.as_ref().or(stage_runner.as_ref());
+            let runner_spec = if let Some(rn) = effective_runner {
+                let runners = self.runners();
+                let rd = runners.get(rn.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("runner '{}' not found", rn))?;
+                self.resolve_runner(rd, &tl_path)?
+            } else {
+                crate::events::RunnerSpec {
+                    name: "default".to_string(), model: None, system: None,
+                    tools: vec![], temperature: None, max_tokens: None,
+                }
+            };
+
+            let prompt = match &run_decl.prompt {
+                Some(crate::ast::PromptSource::Inline(s)) => Some(s.clone()),
+                Some(crate::ast::PromptSource::File(p)) => {
+                    let abs = tl_path.parent().unwrap_or(std::path::Path::new(".")).join(p);
+                    Some(std::fs::read_to_string(&abs)
+                        .map_err(|_| anyhow::anyhow!("prompt file not found: {}", abs.display()))?)
+                }
+                None => None,
+            };
+
+            result.push((run_name.clone(), crate::driver::AgentInvocation {
+                run_id: self.state.run_id.clone(),
+                stage: stage_name.clone(),
+                runner: runner_spec,
+                artifacts: input_artifacts.clone(),
+                prompt,
+            }));
+        }
+        Ok(result)
+    }
+
     /// Advance the pipeline one step: invoke the current stage via the driver.
     /// For the stdio driver this emits stage_invoke, saves state, and returns.
-    pub async fn advance(&mut self, driver: &dyn Driver) -> anyhow::Result<bool> {
+    pub async fn advance(&mut self, driver: &dyn Driver) -> anyhow::Result<AdvanceOutcome> {
         let pipeline_name = self.state.pipeline.clone();
         let pipeline = self
             .pipeline(&pipeline_name)
@@ -214,7 +275,7 @@ impl Runtime {
             RunStatus::Running => (pipeline.start.clone(), None),
             RunStatus::AwaitingResume { stage, parallel } => (stage.clone(), *parallel),
             RunStatus::Done | RunStatus::Failed(_) | RunStatus::ParallelAwait { .. } => {
-                return Ok(false)
+                return Ok(AdvanceOutcome::Idle)
             }
         };
 
@@ -284,7 +345,7 @@ impl Runtime {
                 pending_runs: run_names,
             };
             self.state.save()?;
-            return Ok(true);
+            return Ok(AdvanceOutcome::RunsDispatched { stage: current_stage_name });
         }
 
         let runner_spec = if let Some(runner_name) = &stage.runner {
@@ -343,9 +404,9 @@ impl Runtime {
             artifacts: input_artifacts,
             prompt,
         };
-        driver.invoke_agent(invocation).await?;
+        let result = driver.invoke_agent(invocation).await?;
 
-        Ok(true)
+        Ok(AdvanceOutcome::Invoked { stage: current_stage_name, result })
     }
 
     /// Feed completed stage output back into the state machine.
