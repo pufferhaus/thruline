@@ -1,0 +1,65 @@
+// PR triage: classify a PR description and route to category-specific acknowledgment.
+//
+// Run: thruline run triage.line --driver api --input description="Add retry logic to payment processor"
+
+config {
+  model: claude-sonnet-4-6
+}
+
+runner classifier {
+  system: "You classify pull requests. Respond with JSON only. No markdown fences."
+  temperature: 0.1
+}
+
+runner responder {
+  system: "You write clear, concise PR acknowledgments."
+}
+
+thruline pr_triage {
+  inputs {
+    description as value
+  }
+  start: classify
+  routes {
+    classify.category == "bug_fix"  -> ack_bug
+    classify.category == "feature"  -> ack_feature
+    classify.category == "refactor" -> ack_refactor
+    classify -> ack_other
+  }
+}
+
+stage classify {
+  in:  description as value
+  out: category as value in ["bug_fix","feature","refactor","docs","other"]
+       summary  as value
+  runner: classifier
+  prompt: "Classify this PR. Return JSON with category (bug_fix/feature/refactor/docs/other) and summary (one sentence)."
+}
+
+stage ack_bug {
+  in:  summary as value
+  out: response as value
+  runner: responder
+  prompt: "Write a brief thank-you for this bug fix PR, noting it will be reviewed for correctness and test coverage."
+}
+
+stage ack_feature {
+  in:  summary as value
+  out: response as value
+  runner: responder
+  prompt: "Write a brief acknowledgment for this feature PR, noting it will be reviewed for design and compatibility."
+}
+
+stage ack_refactor {
+  in:  summary as value
+  out: response as value
+  runner: responder
+  prompt: "Write a brief acknowledgment for this refactor PR, noting it will be reviewed for behavior preservation."
+}
+
+stage ack_other {
+  in:  summary as value
+  out: response as value
+  runner: responder
+  prompt: "Write a brief acknowledgment for this PR."
+}

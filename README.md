@@ -285,6 +285,9 @@ thruline resume   <run-id> \
 |---|---|
 | [`examples/sentiment/`](examples/sentiment/) | Predicate routing, two runners, pipeline inputs |
 | [`examples/code-review/`](examples/code-review/) | Retry loop, pass/fail routing |
+| [`examples/pr_triage/`](examples/pr_triage/) | Multi-branch routing, value constraints |
+| [`examples/doc_gen/`](examples/doc_gen/) | Retry loop with [max:N] cap, two-phase review |
+| [`examples/multi_reviewer/`](examples/multi_reviewer/) | Run blocks (parallel), value constraints |
 
 ```bash
 # Sentiment analysis
@@ -293,6 +296,14 @@ ANTHROPIC_API_KEY=sk-... thruline run examples/sentiment/pipeline.line \
 
 # Code review with retry loop
 ANTHROPIC_API_KEY=sk-... thruline run examples/code-review/review.line \
+  --driver api --input code=file:///path/to/file.rs
+
+# PR triage
+ANTHROPIC_API_KEY=sk-... thruline run examples/pr_triage/triage.line \
+  --driver api --input description="Fix null pointer in auth module"
+
+# Multi-reviewer (parallel run blocks)
+ANTHROPIC_API_KEY=sk-... thruline run examples/multi_reviewer/review.line \
   --driver api --input code=file:///path/to/file.rs
 ```
 

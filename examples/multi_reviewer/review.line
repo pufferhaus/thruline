@@ -1,0 +1,67 @@
+// Multi-perspective code review using run blocks (parallel).
+//
+// Run: thruline run review.line --driver api --input code=file:///path/to/file.rs
+
+config {
+  model: claude-sonnet-4-6
+}
+
+runner security {
+  system: "You are a security engineer. Review code for vulnerabilities. Respond with JSON only."
+  temperature: 0.1
+}
+
+runner performance {
+  system: "You are a performance engineer. Review code for efficiency issues. Respond with JSON only."
+  temperature: 0.1
+}
+
+runner quality {
+  system: "You are a senior engineer focused on code quality. Review for maintainability. Respond with JSON only."
+  temperature: 0.2
+}
+
+runner synthesizer {
+  system: "You synthesize multiple code review perspectives into a final report."
+}
+
+thruline multi_review {
+  inputs {
+    code as path
+  }
+  start: review
+  routes {
+    review -> synthesize
+  }
+}
+
+stage review {
+  in:  code as path
+  run security_check {
+    runner: security
+    prompt: "Check for security vulnerabilities. Return JSON with issues (array of strings) and severity (low/medium/high)."
+    out: security_issues  as value
+         security_severity as value in ["low","medium","high"]
+  }
+  run performance_check {
+    runner: performance
+    prompt: "Check for performance issues. Return JSON with issues (array of strings) and severity (low/medium/high)."
+    out: perf_issues   as value
+         perf_severity as value in ["low","medium","high"]
+  }
+  run quality_check {
+    runner: quality
+    prompt: "Check for maintainability issues. Return JSON with issues (array of strings) and severity (low/medium/high)."
+    out: quality_issues   as value
+         quality_severity as value in ["low","medium","high"]
+  }
+}
+
+stage synthesize {
+  in:  security_issues  as value
+       perf_issues      as value
+       quality_issues   as value
+  out: report as value
+  runner: synthesizer
+  prompt: "Synthesize these three code review perspectives into a final report with prioritized action items."
+}

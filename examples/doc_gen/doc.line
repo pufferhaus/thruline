@@ -1,0 +1,53 @@
+// Documentation generator: draft docs, review, revise until approved (max 4 attempts).
+//
+// Run: thruline run doc.line --driver api --input code=file:///path/to/module.rs
+
+config {
+  model: claude-sonnet-4-6
+}
+
+runner writer {
+  system: "You write clear, accurate technical documentation. Respond with JSON only. No markdown fences."
+  temperature: 0.4
+}
+
+runner reviewer {
+  system: "You review technical documentation for accuracy and completeness. Respond with JSON only. No markdown fences."
+  temperature: 0.1
+}
+
+thruline doc_gen {
+  inputs {
+    code    as path
+    context? as value
+  }
+  start: draft
+  routes {
+    review.verdict == "approved" -> finalize
+    review.verdict != "approved" -> draft [max:4]
+  }
+}
+
+stage draft {
+  in:  code     as path
+       context?  as value
+       feedback? as value
+  out: draft as value
+  runner: writer
+  prompt: "Write API documentation for this code. If feedback is provided, incorporate it. Return JSON with a single field: draft (markdown string)."
+}
+
+stage review {
+  in:  draft as value
+  out: verdict  as value in ["approved","rejected"]
+       feedback as value
+  runner: reviewer
+  prompt: "Review this documentation for accuracy and completeness. Return JSON with verdict (approved or rejected) and feedback (improvement notes, or empty string if approved)."
+}
+
+stage finalize {
+  in:  draft as value
+  out: docs as value
+  runner: writer
+  prompt: "Lightly polish this documentation for final output. Return JSON with a single field: docs (final markdown string)."
+}
