@@ -167,13 +167,23 @@ impl Runtime {
                         }
                     }
                     // Pipeline input is the last resort default
-                    found.or_else(|| {
-                        if let Some(path) = artifacts.get_file(&input_key) {
-                            Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
-                        } else {
-                            artifacts.get_ref(&input_key).map(|v| serde_json::Value::String(v.to_string()))
-                        }
-                    })
+                    found
+                        .or_else(|| {
+                            if let Some(path) = artifacts.get_file(&input_key) {
+                                Some(serde_json::Value::String(path.to_string_lossy().into_owned()))
+                            } else {
+                                artifacts.get_ref(&input_key).map(|v| serde_json::Value::String(v.to_string()))
+                            }
+                        })
+                        .or_else(|| {
+                            input.seed_path.as_ref().map(|seed| {
+                                let abs = self.state.line_file
+                                    .parent()
+                                    .unwrap_or(Path::new("."))
+                                    .join(seed);
+                                serde_json::Value::String(abs.to_string_lossy().into_owned())
+                            })
+                        })
                 }
             };
 
@@ -894,6 +904,35 @@ mod tests {
         rt.state.status = RunStatus::Done;
         let err = rt.resume_stage("a", None, vec![]).unwrap_err();
         assert!(err.to_string().contains("already done"), "got: {}", err);
+    }
+
+    #[test]
+    fn test_seed_path_used_when_no_artifact_present() {
+        let state = RunState::new("r".into(), "p".into(), "/tmp/test.line".into());
+        let items = vec![
+            mk_runner("runner"),
+            TlItem::Stage(StageDecl {
+                name: "analyze".into(),
+                inputs: vec![ArtifactDecl {
+                    name: "brief".into(), source: None, optional: true,
+                    kind: ArtifactKind::Path,
+                    seed_path: Some("specs/brief.md".into()),
+                }],
+                outputs: vec![], runner: Some("runner".into()),
+                prompt: None, runs: vec![],
+            }),
+            TlItem::Pipeline(PipelineDecl {
+                name: "p".into(), inputs: vec![], start: "analyze".into(), routes: vec![],
+            }),
+        ];
+        let rt = Runtime::new(state, items);
+        let stages = rt.stages();
+        let stage = stages.get("analyze").unwrap();
+        let result = rt.stage_input_artifacts(stage, &rt.state.artifacts.clone());
+        assert!(
+            result["brief"].as_str().unwrap_or("").ends_with("specs/brief.md"),
+            "seed path not applied: {}", result
+        );
     }
 
     #[test]

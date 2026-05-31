@@ -412,9 +412,6 @@ Warnings: stages unreachable from a thruline's `start`.
 
 ## Feature Gaps
 
-**Seed paths** (`as path("seed.md")`)
-The seed-path syntax in artifact declarations is parsed and stored but never applied at runtime. Declaring `in: brief? as path("default-brief.md")` does not pre-populate the artifact store before the stage runs.
-
 **Compound route predicates**
 `==` and `!=` against a single string only. No `&&`, `||`, numeric comparisons.
 
