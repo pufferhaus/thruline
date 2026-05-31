@@ -223,6 +223,7 @@ impl Runtime {
         let input_artifacts = self.stage_input_artifacts(stage_decl, &self.state.artifacts);
         let stage_runner = stage_decl.runner.clone();
 
+        let runners = self.runners();
         let mut result = Vec::new();
         for run_name in pending_runs {
             let run_decl = stage_decl.runs.iter()
@@ -231,7 +232,6 @@ impl Runtime {
 
             let effective_runner = run_decl.runner.as_ref().or(stage_runner.as_ref());
             let runner_spec = if let Some(rn) = effective_runner {
-                let runners = self.runners();
                 let rd = runners.get(rn.as_str())
                     .ok_or_else(|| anyhow::anyhow!("runner '{}' not found", rn))?;
                 self.resolve_runner(rd, &tl_path)?

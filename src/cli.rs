@@ -436,9 +436,9 @@ pub async fn cmd_run(
                                         }.emit();
                                         crate::events::ThrulineEvent::PipelineError {
                                             run_id: run_id.clone(), ts: chrono::Utc::now(),
-                                            stage: stage.clone(), error: msg,
+                                            stage: stage.clone(), error: msg.clone(),
                                         }.emit();
-                                        anyhow::bail!("run block returned no parseable outputs");
+                                        anyhow::bail!("{}", msg);
                                     }
                                     if let Err(e) = runtime.resume_stage(&stage, Some(&run_name), result.outputs) {
                                         crate::events::ThrulineEvent::PipelineError {
@@ -506,15 +506,18 @@ pub async fn cmd_resume(
             RunStatus::AwaitingResume { stage, .. } => stage.clone(),
             _ => "unknown".to_string(),
         };
-        if let Err(e) = runtime.advance(&driver).await {
-            crate::events::ThrulineEvent::PipelineError {
-                run_id: run_id.to_string(),
-                ts: chrono::Utc::now(),
-                stage: pending_stage,
-                error: e.to_string(),
+        match runtime.advance(&driver).await {
+            Err(e) => {
+                crate::events::ThrulineEvent::PipelineError {
+                    run_id: run_id.to_string(), ts: chrono::Utc::now(),
+                    stage: pending_stage, error: e.to_string(),
+                }.emit();
+                return Err(e);
             }
-            .emit();
-            return Err(e);
+            Ok(crate::runtime::AdvanceOutcome::Idle) => {}
+            Ok(crate::runtime::AdvanceOutcome::Invoked { .. }) => {}
+            Ok(crate::runtime::AdvanceOutcome::RunsDispatched { .. }) => {}
+            // All outcomes are valid for stdio resume — harness drives externally
         }
     }
 
