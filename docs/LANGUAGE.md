@@ -453,3 +453,34 @@ Quoted strings terminate at the first `"` — backslash escaping is not supporte
 **Value constraints on path outputs not enforced**
 `in [...]` is parsed on any `artifact_decl` but only enforced at runtime for `value` outputs. Declaring a constraint on a `path` output is a no-op.
 
+---
+
+## Language Server (LSP)
+
+`thruline lsp` starts a language server (stdio transport, LSP protocol). Configure your editor:
+
+**Neovim** (nvim-lspconfig):
+```lua
+require('lspconfig').configs.thruline = {
+  default_config = {
+    cmd = { 'thruline', 'lsp' },
+    filetypes = { 'line' },
+    root_dir = require('lspconfig.util').find_git_ancestor,
+  }
+}
+require('lspconfig').thruline.setup {}
+```
+
+**Zed** — add to `~/.config/zed/settings.json`:
+```json
+{
+  "lsp": {
+    "thruline": {
+      "binary": { "path": "thruline", "arguments": ["lsp"] }
+    }
+  }
+}
+```
+
+Current capabilities: full diagnostics (all validator errors and warnings), keyword completion.
+

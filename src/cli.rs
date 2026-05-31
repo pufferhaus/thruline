@@ -35,6 +35,8 @@ pub enum Commands {
         #[arg(long = "input")]
         inputs: Vec<String>,
     },
+    /// Start the language server (communicates via stdio, LSP protocol)
+    Lsp,
     /// Feed agent output back to a suspended run
     Resume {
         run_id: String,
@@ -56,6 +58,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Inspect  { file }  => cmd_inspect(&file),
         Commands::Runs               => cmd_runs(),
         Commands::Status { run_id }  => cmd_status(&run_id),
+        Commands::Lsp                => cmd_lsp().await,
         Commands::Run { file, pipeline, driver, inputs } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs).await,
         Commands::Resume { run_id, stage, run, artifacts } => cmd_resume(&run_id, &stage, run.as_deref(), &artifacts).await,
     }
@@ -524,4 +527,8 @@ pub async fn cmd_resume(
     }
 
     Ok(())
+}
+
+pub async fn cmd_lsp() -> anyhow::Result<()> {
+    crate::lsp::run_lsp().await
 }
