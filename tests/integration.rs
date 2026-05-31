@@ -315,3 +315,29 @@ fn test_resume_wrong_stage_emits_stage_error() {
         "stage_error not emitted: {}", stdout
     );
 }
+
+#[test]
+fn test_mock_driver_runs_full_pipeline() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "test.line", BASIC_TL);
+
+    // Write mock responses
+    let mock = serde_json::json!({
+        "a": { "verdict": "ok" },
+        "b": {}
+    });
+    let mock_path = dir.path().join("mock.json");
+    std::fs::write(&mock_path, mock.to_string()).unwrap();
+
+    let out = thruline()
+        .args([
+            "run", tl.to_str().unwrap(),
+            "--driver", "mock",
+            "--mock-file", mock_path.to_str().unwrap(),
+        ])
+        .output().unwrap();
+
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains(r#""event":"pipeline_done""#), "no pipeline_done: {}", stdout);
+}

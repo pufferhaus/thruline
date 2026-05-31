@@ -1,5 +1,8 @@
 pub mod api;
+pub mod openai;
+pub mod ollama;
 pub mod stdio;
+pub mod mock;
 
 use crate::events::RunnerSpec;
 use async_trait::async_trait;

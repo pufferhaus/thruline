@@ -34,6 +34,9 @@ pub enum Commands {
         /// Pipeline inputs: key=value (prefix file:// for file artifacts)
         #[arg(long = "input")]
         inputs: Vec<String>,
+        /// Path to mock response fixture (required when --driver mock)
+        #[arg(long)]
+        mock_file: Option<PathBuf>,
     },
     /// Serve a local web UI for inspecting runs
     Serve {
@@ -66,7 +69,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Status { run_id }  => cmd_status(&run_id),
         Commands::Serve { port }     => cmd_serve(port).await,
         Commands::Lsp                => cmd_lsp().await,
-        Commands::Run { file, pipeline, driver, inputs } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs).await,
+        Commands::Run { file, pipeline, driver, inputs, mock_file } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs, mock_file.as_deref()).await,
         Commands::Resume { run_id, stage, run, artifacts } => cmd_resume(&run_id, &stage, run.as_deref(), &artifacts).await,
     }
 }
@@ -270,6 +273,7 @@ pub async fn cmd_run(
     pipeline_name: Option<&str>,
     driver_name: &str,
     input_args: &[String],
+    mock_file: Option<&Path>,
 ) -> anyhow::Result<()> {
     use crate::runtime::Runtime;
     use uuid::Uuid;
@@ -470,7 +474,218 @@ pub async fn cmd_run(
                 }
             }
         }
-        other => anyhow::bail!("unknown driver '{}' \u{2014} use stdio or api", other),
+        "ollama" => {
+            let driver = crate::driver::ollama::OllamaDriver::from_env(config_model);
+            crate::events::ThrulineEvent::PipelineStart {
+                run_id: run_id.clone(),
+                ts: chrono::Utc::now(),
+                pipeline: pipeline.clone(),
+                protocol: "1".to_string(),
+                inputs: serde_json::Value::Null,
+            }.emit();
+
+            loop {
+                let pending_stage = match &runtime.state.status {
+                    RunStatus::Running => runtime.items.iter().find_map(|i| {
+                        if let crate::ast::TlItem::Pipeline(p) = i {
+                            if p.name == runtime.state.pipeline { Some(p.start.clone()) } else { None }
+                        } else { None }
+                    }).unwrap_or_else(|| "unknown".to_string()),
+                    RunStatus::AwaitingResume { stage, .. } => stage.clone(),
+                    RunStatus::ParallelAwait { stage, .. } => stage.clone(),
+                    RunStatus::Done | RunStatus::Failed(_) => break,
+                };
+
+                match runtime.advance(&driver).await {
+                    Err(e) => {
+                        crate::events::ThrulineEvent::PipelineError {
+                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                            stage: pending_stage, error: e.to_string(),
+                        }.emit();
+                        return Err(e);
+                    }
+                    Ok(crate::runtime::AdvanceOutcome::Idle) => break,
+
+                    Ok(crate::runtime::AdvanceOutcome::Invoked { stage, result }) => {
+                        if result.outputs.is_empty() {
+                            let msg = format!(
+                                "stage '{}' returned no parseable outputs — model response was not valid JSON",
+                                stage
+                            );
+                            crate::events::ThrulineEvent::StageError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage: stage.clone(), error: msg.clone(),
+                            }.emit();
+                            crate::events::ThrulineEvent::PipelineError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage, error: msg.clone(),
+                            }.emit();
+                            anyhow::bail!("{}", msg);
+                        }
+                        if let Err(e) = runtime.resume_stage(&stage, None, result.outputs) {
+                            crate::events::ThrulineEvent::StageError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage: stage.clone(), error: e.to_string(),
+                            }.emit();
+                            crate::events::ThrulineEvent::PipelineError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage, error: e.to_string(),
+                            }.emit();
+                            return Err(e);
+                        }
+                    }
+
+                    Ok(crate::runtime::AdvanceOutcome::RunsDispatched { stage }) => {
+                        let run_invocations = match runtime.pending_run_invocations() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                crate::events::ThrulineEvent::PipelineError {
+                                    run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                    stage: stage.clone(), error: e.to_string(),
+                                }.emit();
+                                return Err(e);
+                            }
+                        };
+                        for (run_name, invocation) in run_invocations {
+                            match driver.invoke_agent(invocation).await {
+                                Err(e) => {
+                                    crate::events::ThrulineEvent::StageError {
+                                        run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                        stage: stage.clone(), error: e.to_string(),
+                                    }.emit();
+                                    crate::events::ThrulineEvent::PipelineError {
+                                        run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                        stage: stage.clone(), error: e.to_string(),
+                                    }.emit();
+                                    return Err(e);
+                                }
+                                Ok(result) => {
+                                    if result.outputs.is_empty() {
+                                        let msg = format!(
+                                            "run '{}.{}' returned no parseable outputs",
+                                            stage, run_name
+                                        );
+                                        crate::events::ThrulineEvent::StageError {
+                                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                            stage: stage.clone(), error: msg.clone(),
+                                        }.emit();
+                                        crate::events::ThrulineEvent::PipelineError {
+                                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                            stage: stage.clone(), error: msg.clone(),
+                                        }.emit();
+                                        anyhow::bail!("{}", msg);
+                                    }
+                                    if let Err(e) = runtime.resume_stage(&stage, Some(&run_name), result.outputs) {
+                                        crate::events::ThrulineEvent::PipelineError {
+                                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                            stage: stage.clone(), error: e.to_string(),
+                                        }.emit();
+                                        return Err(e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if matches!(runtime.state.status, RunStatus::Done | RunStatus::Failed(_)) {
+                    break;
+                }
+            }
+        }
+        "mock" => {
+            let mock_path = mock_file.ok_or_else(||
+                anyhow::anyhow!("--mock-file is required when using --driver mock")
+            )?;
+            let driver = crate::driver::mock::MockDriver::from_file(mock_path)?;
+            crate::events::ThrulineEvent::PipelineStart {
+                run_id: run_id.clone(),
+                ts: chrono::Utc::now(),
+                pipeline: pipeline.clone(),
+                protocol: "1".to_string(),
+                inputs: serde_json::Value::Null,
+            }.emit();
+
+            loop {
+                let pending_stage = match &runtime.state.status {
+                    RunStatus::Running => runtime.items.iter().find_map(|i| {
+                        if let crate::ast::TlItem::Pipeline(p) = i {
+                            if p.name == runtime.state.pipeline { Some(p.start.clone()) } else { None }
+                        } else { None }
+                    }).unwrap_or_else(|| "unknown".to_string()),
+                    RunStatus::AwaitingResume { stage, .. } => stage.clone(),
+                    RunStatus::ParallelAwait { stage, .. } => stage.clone(),
+                    RunStatus::Done | RunStatus::Failed(_) => break,
+                };
+
+                match runtime.advance(&driver).await {
+                    Err(e) => {
+                        crate::events::ThrulineEvent::PipelineError {
+                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                            stage: pending_stage, error: e.to_string(),
+                        }.emit();
+                        return Err(e);
+                    }
+                    Ok(crate::runtime::AdvanceOutcome::Idle) => break,
+
+                    Ok(crate::runtime::AdvanceOutcome::Invoked { stage, result }) => {
+                        if let Err(e) = runtime.resume_stage(&stage, None, result.outputs) {
+                            crate::events::ThrulineEvent::StageError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage: stage.clone(), error: e.to_string(),
+                            }.emit();
+                            crate::events::ThrulineEvent::PipelineError {
+                                run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                stage, error: e.to_string(),
+                            }.emit();
+                            return Err(e);
+                        }
+                    }
+
+                    Ok(crate::runtime::AdvanceOutcome::RunsDispatched { stage }) => {
+                        let run_invocations = match runtime.pending_run_invocations() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                crate::events::ThrulineEvent::PipelineError {
+                                    run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                    stage: stage.clone(), error: e.to_string(),
+                                }.emit();
+                                return Err(e);
+                            }
+                        };
+                        for (run_name, invocation) in run_invocations {
+                            match driver.invoke_agent(invocation).await {
+                                Err(e) => {
+                                    crate::events::ThrulineEvent::StageError {
+                                        run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                        stage: stage.clone(), error: e.to_string(),
+                                    }.emit();
+                                    crate::events::ThrulineEvent::PipelineError {
+                                        run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                        stage: stage.clone(), error: e.to_string(),
+                                    }.emit();
+                                    return Err(e);
+                                }
+                                Ok(result) => {
+                                    if let Err(e) = runtime.resume_stage(&stage, Some(&run_name), result.outputs) {
+                                        crate::events::ThrulineEvent::PipelineError {
+                                            run_id: run_id.clone(), ts: chrono::Utc::now(),
+                                            stage: stage.clone(), error: e.to_string(),
+                                        }.emit();
+                                        return Err(e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if matches!(runtime.state.status, RunStatus::Done | RunStatus::Failed(_)) {
+                    break;
+                }
+            }
+        }
+        other => anyhow::bail!("unknown driver '{}' \u{2014} use stdio, api, ollama, or mock", other),
     }
 
     Ok(())
