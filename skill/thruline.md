@@ -1,18 +1,18 @@
 ---
 name: thruline
-description: Run a .line pipeline using the thruline binary as orchestrator. Drives agent invocations through this Claude Code harness and renders live pipeline status. Use when asked to run a thruline pipeline or .line file.
+description: Run a .line file using the thruline binary as orchestrator. Drives agent invocations through this Claude Code harness and renders live status. Use when asked to run a thruline workflow or .line file.
 ---
 
 # Thruline Skill
 
-Runs a `.line` pipeline file using the `thruline` binary as the orchestrator.
+Runs a `.line` file using the `thruline` binary as the orchestrator.
 This skill bridges the binary's stdio event protocol with Claude Code's Agent tool.
 
 ## Usage
 
 Invoke with a path to a `.line` file:
 ```
-/thruline path/to/pipeline.line [--pipeline <name>]
+/thruline path/to/workflow.line [--pipeline <name>]
 ```
 
 ## How It Works

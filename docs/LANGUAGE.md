@@ -252,12 +252,12 @@ stage dual-review {
 
 ---
 
-## Pipelines
+## Thruline
 
-A `pipeline` declares control flow: which stage runs first, and how outputs route to subsequent stages.
+A `thruline` block declares control flow: which stage runs first, and how outputs route to subsequent stages.
 
 ```
-pipeline <name> {
+thruline <name> {
   start: <stage-name>
   routes {
     <route>
@@ -298,7 +298,7 @@ This keeps runners atomic (a runner defines a single task) while routes signal w
 #### Example
 
 ```
-pipeline feature-dev {
+thruline feature-dev {
   start: interview
   routes {
     interview.verdict == "rejected" -> interview   // retry loop
@@ -402,12 +402,11 @@ Harnesses should instruct agents to respond with a JSON object:
 - `runner:` references in stages and `run` blocks resolve to declared runners
 - Route source/target stages exist
 - Predicate artifacts declared as outputs on the referenced stage
-- Every `[*N]` fan-out has a matching `[*]` fan-in
 - Concurrency limits ≥ 1
-- No duplicate runner/stage/pipeline names
+- No duplicate runner/stage/thruline names
 - At most one `config` block per file
 
-Warnings: stages unreachable from a pipeline's `start`.
+Warnings: stages unreachable from a thruline's `start`.
 
 ---
 

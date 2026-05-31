@@ -1,82 +1,96 @@
 # Thruline
 
-A minimal DSL and runtime for deterministic multiagent pipelines.
+**Deterministic multiagent workflows, expressed as code.**
 
-You describe a workflow in a `.line` file — agents, what they produce, and how outputs route between them. Thruline runs it, checkpoints state after every agent call, and can resume if the process dies.
+Thruline is a DSL and runtime for defining agent pipelines where every handoff, branch, and artifact is explicit. You describe what each agent produces and how outputs route to the next agent. Thruline runs it, checkpoints state after every step, and resumes from exactly where it stopped.
 
 ```
 config {
-  model: claude-haiku-4-5-20251001
+  model: claude-sonnet-4-6
 }
 
 runner analyst {
-  system: "You are a concise analyst. Respond ONLY with JSON."
-  temperature: 0.3
+  system: "You are a code reviewer. Respond with JSON."
+  temperature: 0.2
 }
 
-pipeline sentiment {
+thruline review {
   inputs {
-    text as value
+    code as path
   }
-  start: classify
+  start: assess
   routes {
-    classify.sentiment == "positive" -> affirm
-    classify.sentiment != "positive" -> explain
+    assess.verdict == "approved" -> report
+    assess.verdict != "approved" -> revise
+    revise -> assess                        // loops back until approved
   }
 }
 
-stage classify {
-  in:  text      as value
-  out: sentiment as value
-       notes     as value
+stage assess {
+  in:  code    as path
+  out: verdict as value
+       notes   as value
   runner: analyst
-  prompt: "Classify the sentiment of the provided text. Return JSON with sentiment and notes fields."
+  prompt: "Review the code. Return JSON with verdict (approved/rejected) and notes."
 }
 
-stage affirm {
-  in:  notes as value
-  out: reply as value
+stage revise {
+  in:  code  as path
+       notes as value
+  out: code  as path
   runner: analyst
-  prompt: "Write a brief affirming reply based on the notes."
+  prompt: "Apply the reviewer notes and return the revised code."
 }
 
-stage explain {
+stage report {
   in:  notes as value
-  out: reply as value
-  runner: analyst
-  prompt: "Write a brief explanatory reply based on the notes."
+  out: summary as value
+  prompt: "Write a final review summary."
 }
 ```
 
 ```bash
 # Standalone — calls Anthropic API directly
-ANTHROPIC_API_KEY=sk-... thruline run pipeline.line --driver api --input text="I love Rust!"
+ANTHROPIC_API_KEY=sk-... thruline run review.line --driver api \
+  --input code=file:///path/to/code.rs
 
-# Harness mode — harness drives the agents
-thruline run pipeline.line --input text="I love Rust!"
-# → emits stage_invoke JSON, then drive the agent and resume:
-thruline resume <run-id> --stage classify \
-  --artifact sentiment=positive --artifact notes="Enthusiastic tone."
+# Harness mode — Claude Code drives the agents
+thruline run review.line --input code=file:///path/to/code.rs
+# → emits stage_invoke; call your agent, then:
+thruline resume <run-id> --stage assess \
+  --artifact verdict=approved --artifact notes="Looks good."
 ```
+
+---
+
+## Why Thruline
+
+**Reproducible.** Every run is checkpointed. Kill the process, restart, and it continues from the last completed stage.
+
+**Explicit routing.** Branching, retry loops, and fan-out are declared in the file — no imperative glue code.
+
+**Portable.** The `stage_invoke` event embeds the full runner spec. Any harness that can read NDJSON can drive the agents — Claude Code, a shell script, a CI job.
+
+**Self-contained.** A `.line` file is the full description: agents, prompts, routing, and inputs. No ambient configuration.
 
 ---
 
 ## How it works
 
-Thruline has two execution modes:
+Thruline has two modes:
 
-**Harness mode** (default, `--driver stdio`) — a harness such as Claude Code drives agent invocations. `thruline run` emits a `stage_invoke` NDJSON event and exits. The harness calls the agent, then calls `thruline resume` with the outputs. The runtime evaluates routes and emits the next event. State is checkpointed to `~/.thruline/runs/` after every step.
+**Harness mode** (default) — `thruline run` emits a `stage_invoke` JSON event and exits. Your harness (Claude Code, a script, anything) calls the agent and feeds outputs back with `thruline resume`. State is checkpointed after every step to `~/.thruline/runs/`.
 
-**Standalone mode** (`--driver api`) — `thruline run --driver api` calls the Anthropic Messages API directly with `ANTHROPIC_API_KEY`. No external harness required.
+**Standalone mode** (`--driver api`) — Calls the Anthropic Messages API directly. No harness needed.
 
 ---
 
-## Language
+## The Language
 
-A `.line` file contains five declaration types:
+A `.line` file contains five declaration types.
 
 ### `config`
-File-level defaults. Sets the fallback model for runners that don't declare one.
+File-level defaults. Sets the fallback model for all runners.
 
 ```
 config {
@@ -85,7 +99,7 @@ config {
 ```
 
 ### `runner`
-A reusable agent configuration. All fields optional — absent fields defer to the harness or `config`.
+A reusable agent definition. All fields are optional — absent fields inherit from `config` or the harness default.
 
 ```
 runner analyst {
@@ -98,48 +112,44 @@ runner analyst {
 ```
 
 ### `stage`
-A single agent invocation. Declares inputs, outputs, which runner to use, and an optional task prompt. Stages with `run` blocks invoke multiple runners simultaneously (parallel execution coming soon).
+A single agent invocation. Declares what it consumes, what it produces, and how to run it.
 
 ```
 stage review {
-  in:  code     as value
-       context? as value      // optional — stage runs even if absent
+  in:  code     as path
+       context? as value     // optional — stage runs even if absent
   out: verdict  as value
-       report   as path       // path = disk file; value = in-memory string
+       report   as path      // path = disk file; value = in-memory string
   runner: analyst
   prompt: file("prompts/review.md")
 }
 ```
 
-**Artifact resolution** for `in:` declarations:
-1. `stage.name` — the stage's own prior output (e.g. after a retry)
-2. `input.name` — pipeline input supplied via `--input`
-3. History scan — prior stages newest-first; first that produced an artifact with this name wins
-4. Explicit source — `classify.language as value` looks up `classify.language` directly, bypassing history
+Artifacts flow automatically — if `classify` outputs `language as value`, any later stage can declare `in: language as value` and receive it without explicit wiring.
 
-### `pipeline`
-Declares inputs and routing logic.
+### `thruline`
+The routing declaration: which stage runs first and how outputs branch.
 
 ```
-pipeline feature-dev {
+thruline feature-dev {
   inputs {
-    brief    as path     // required
-    context? as value    // optional
+    brief    as path      // required input
+    context? as value     // optional input
   }
-  start: interview
+  start: plan
   routes {
-    interview.verdict == "rejected" -> interview   // retry loop
-    interview.verdict == "approved" -> implement
-    implement -> implement[*3]                     // fan-out (coming soon)
-    implement[*] -> summarize                      // fan-in
+    plan.verdict == "rejected" -> plan     // retry loop
+    plan.verdict == "approved" -> implement
+    implement -> review[*3]               // parallel hint: up to 3 subagents
+    review[*] -> summarize
   }
 }
 ```
 
-Route types: unconditional, `==` predicate, `!=` predicate, fan-out `[*N]`, fan-in `[*]`.
+Route types: unconditional, `==`/`!=` predicate, fan-out `[*N]`, fan-in `[*]`.
 
 ### `import`
-Merge declarations from another `.line` file. Useful for shared runner libraries.
+Pull in runners or stages from another file.
 
 ```
 import "shared/runners.line"
@@ -149,67 +159,79 @@ import "shared/runners.line"
 
 ## CLI
 
-```
+```bash
 thruline validate <file.line>              # Parse and validate
-thruline inspect  <file.line>              # Print pipeline graph
-thruline run      <file.line>              # Run (stdio driver)
+thruline inspect  <file.line>              # Show routing graph and stages
+thruline run      <file.line>              # Run (stdio/harness mode)
 thruline run      <file.line> \
   --driver api                             # Run standalone (Anthropic API)
-  --pipeline <name>                        # Select pipeline by name
-  --input key=value                        # Set pipeline input (repeatable)
+  --pipeline <name>                        # Select thruline by name
+  --input key=value                        # Set input artifact
   --input file=file:///abs/path
 thruline runs                              # List all runs
-thruline status   <run-id>                 # Show run state and artifacts
+thruline status   <run-id>                 # Show run state
 thruline resume   <run-id> \
   --stage <name>                           # Feed agent output back
   --artifact key=value
-  --artifact file=file:///abs/path
+```
+
+---
+
+## Install
+
+```bash
+# Homebrew
+brew tap pufferhaus/tap
+brew install thruline
+
+# From source (requires Rust 1.70+)
+cargo install --git https://github.com/pufferhaus/thruline
+```
+
+---
+
+## Examples
+
+| Example | What it shows |
+|---|---|
+| [`examples/sentiment/`](examples/sentiment/) | Predicate routing, two runners, pipeline inputs |
+| [`examples/code-review/`](examples/code-review/) | Retry loop, pass/fail routing, two-stage revision |
+
+```bash
+# Sentiment analysis
+ANTHROPIC_API_KEY=sk-... thruline run examples/sentiment/pipeline.line \
+  --driver api --input text="I love Rust!"
+
+# Code review with retry loop
+ANTHROPIC_API_KEY=sk-... thruline run examples/code-review/review.line \
+  --driver api --input code=file:///path/to/file.rs
 ```
 
 ---
 
 ## Events (NDJSON)
 
-Each event is one JSON line tagged `"event": "<type>"`. Optional fields are omitted when absent.
+Thruline communicates via NDJSON on stdout:
 
 ```json
-{"event":"pipeline_start","run_id":"a1b2c3d4","pipeline":"code-review"}
-{"event":"stage_invoke","stage":"classify","runner":{"name":"analyst","model":"claude-opus-4-8","system":"..."},"artifacts":{"code":"..."}}
-{"event":"route_taken","from":"classify","to":"review","predicate":"Stage(\"classify\")"}
-{"event":"pipeline_done","outputs":[]}
+{"event":"pipeline_start","run_id":"a1b2c3d4","pipeline":"review","ts":"..."}
+{"event":"stage_invoke","stage":"assess","runner":{"name":"analyst","model":"claude-opus-4-8"},"artifacts":{"code":"..."},"outputs":[{"name":"verdict","kind":"value"}]}
+{"event":"route_taken","from":"assess","to":"report","predicate":"assess.verdict == \"approved\""}
+{"event":"pipeline_done","run_id":"a1b2c3d4","outputs":{"assess.verdict":"approved","report.summary":"..."}}
 ```
 
-The `stage_invoke` event embeds the full runner spec so harnesses don't need ambient agent lookup — pipelines are self-contained.
-
----
-
-## Install
-
-```
-git clone https://github.com/pufferhaus/thruline
-cd thruline
-cargo install --path .
-```
-
-Requires Rust 1.70+.
-
-## Examples
-
-See [`examples/sentiment/`](examples/sentiment/) for a self-contained runnable pipeline.
+The `stage_invoke` event embeds the full runner spec — harnesses don't need ambient lookup.
 
 ---
 
 ## Status
 
-Core pipeline execution (sequential, predicate routing, retry loops, pipeline inputs) is complete and working. Two features are implemented at the language level but not yet wired in the runtime:
+Core execution is complete: sequential stages, predicate routing, retry loops, pipeline inputs, checkpoint/resume, and the API driver.
 
-- **Parallel fan-out/fan-in** (`[*N]` / `[*]`) — Scheduler infrastructure exists, runtime wiring pending
-- **`run` blocks** (parallel stage invocations) — same parallel execution path
+Two features are parsed and validated but not yet wired in the runtime:
+- **Parallel fan-out** (`[*N]`/`[*]`) — hint passes to harness; full scheduler pending
+- **`run` blocks** (named parallel invocations within a stage)
 
 See [`docs/LANGUAGE.md`](docs/LANGUAGE.md) for the full language reference.
-
----
-
-## Domain
 
 [thruline.work](https://thruline.work)

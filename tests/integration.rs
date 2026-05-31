@@ -24,7 +24,7 @@ stage a {
 stage b {
   runner: r
 }
-pipeline p {
+thruline p {
   start: a
   routes {
     a.verdict == "ok" -> b
@@ -49,7 +49,7 @@ fn test_validate_unknown_runner_fails() {
 stage a {
   runner: ghost
 }
-pipeline p {
+thruline p {
   start: a
   routes {}
 }
@@ -75,7 +75,7 @@ fn test_inspect_shows_pipeline() {
     let out = thruline().args(["inspect", tl.to_str().unwrap()]).output().unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("pipeline: p"), "got: {}", stdout);
+    assert!(stdout.contains("thruline: p"), "got: {}", stdout);
     assert!(stdout.contains("start: a"), "got: {}", stdout);
     assert!(stdout.contains("a.verdict"), "got: {}", stdout);
     assert!(stdout.contains("-> b"), "got: {}", stdout);
@@ -180,7 +180,7 @@ runner r {
     let tl = write_tl(dir.path(), "main.line", r#"
 import "runners.line"
 stage a { runner: r }
-pipeline p {
+thruline p {
   start: a
   routes {}
 }

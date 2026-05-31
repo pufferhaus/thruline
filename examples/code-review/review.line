@@ -1,0 +1,58 @@
+// Code review workflow — reviews code, loops on rejection, produces a final summary.
+//
+// Inputs:
+//   code  as path   — path to the file or diff to review
+//
+// Run:
+//   thruline run review.line --driver api --input code=file:///path/to/file.rs
+
+config {
+  model: claude-sonnet-4-6
+}
+
+runner reviewer {
+  system: file("prompts/reviewer.md")
+  temperature: 0.2
+  max_tokens: 1024
+}
+
+runner writer {
+  system: "You are a technical writer. Produce clear, concise summaries."
+  max_tokens: 512
+}
+
+thruline code-review {
+  inputs {
+    code as path
+  }
+  start: review
+  routes {
+    review.verdict == "approved" -> summarize
+    review.verdict != "approved" -> revise
+    revise -> review
+  }
+}
+
+stage review {
+  in:  code  as path
+       notes? as value     // feedback from prior revise pass (optional on first run)
+  out: verdict as value    // "approved" or "rejected"
+       feedback as value
+  runner: reviewer
+  prompt: file("prompts/review-task.md")
+}
+
+stage revise {
+  in:  code     as path
+       feedback as value
+  out: code     as path
+  runner: reviewer
+  prompt: "Apply the feedback to the code and return the revised version as a file."
+}
+
+stage summarize {
+  in:  feedback as value
+  out: summary  as value
+  runner: writer
+  prompt: "Write a concise approval summary based on the reviewer feedback."
+}

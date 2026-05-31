@@ -371,7 +371,7 @@ stage interview {
     #[test]
     fn test_parse_pipeline_routes() {
         let src = r#"
-pipeline feature-dev {
+thruline feature-dev {
   start: interview
   routes {
     interview.verdict == "approved" -> review
@@ -429,7 +429,7 @@ runner r {
 import "other.line"
 runner r { model: claude-sonnet-4-6 system: "s" }
 stage a { runner: r }
-pipeline p { start: a routes {} }
+thruline p { start: a routes {} }
 "#;
         let items = parse_str(src).unwrap();
         assert_eq!(items.len(), 4);
@@ -442,7 +442,7 @@ pipeline p { start: a routes {} }
     #[test]
     fn test_parse_route_ne_predicate() {
         let src = r#"
-pipeline p {
+thruline p {
   start: a
   routes {
     a.verdict != "rejected" -> b
@@ -514,7 +514,7 @@ stage review {
     #[test]
     fn test_parse_pipeline_with_inputs() {
         let src = r#"
-pipeline code-review {
+thruline code-review {
   inputs {
     code     as path
     language as value
@@ -545,7 +545,7 @@ runner r { model: claude-sonnet-4-6 }
     #[test]
     fn test_parse_pipeline_without_inputs_still_valid() {
         let src = r#"
-pipeline p {
+thruline p {
   start: a
   routes {}
 }

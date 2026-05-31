@@ -21,9 +21,9 @@ pub enum ValidationError {
     DuplicateConfig,
     #[error("stage '{stage}' run '{run}' references unknown runner '{runner}'")]
     UnknownRunnerInRun { stage: String, run: String, runner: String },
-    #[error("pipeline '{0}' has duplicate input name '{1}'")]
+    #[error("thruline '{0}' has duplicate input name '{1}'")]
     DuplicateInput(String, String),
-    #[error("stage name 'input' is reserved — it conflicts with the pipeline input namespace")]
+    #[error("stage name 'input' is reserved — it conflicts with the thruline input namespace")]
     ReservedStageName,
     #[error("runner name 'default' is reserved — it is used as the synthetic name for stages with no runner")]
     ReservedRunnerName,

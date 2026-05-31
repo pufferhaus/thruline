@@ -63,7 +63,7 @@ pipe_start      = { "start" ~ ":" ~ identifier }
 routes_block    = { "routes" ~ "{" ~ route* ~ "}" }
 pipeline_input  = { identifier ~ opt_marker? ~ "as" ~ artifact_kind }
 pipeline_inputs = { "inputs" ~ "{" ~ pipeline_input* ~ "}" }
-pipeline_decl   = { "pipeline" ~ identifier ~ "{" ~ pipeline_inputs? ~ pipe_start ~ routes_block ~ "}" }
+pipeline_decl   = { "thruline" ~ identifier ~ "{" ~ pipeline_inputs? ~ pipe_start ~ routes_block ~ "}" }
 
 // ── Import ────────────────────────────────────────────────────────────────
 import_decl  = { "import" ~ quoted_str }

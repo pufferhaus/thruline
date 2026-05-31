@@ -13,7 +13,7 @@ runner writer {
   max_tokens: 256
 }
 
-pipeline sentiment {
+thruline sentiment {
   inputs {
     text as value
   }

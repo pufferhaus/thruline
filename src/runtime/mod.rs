@@ -208,7 +208,7 @@ impl Runtime {
         let pipeline_name = self.state.pipeline.clone();
         let pipeline = self
             .pipeline(&pipeline_name)
-            .ok_or_else(|| anyhow::anyhow!("pipeline '{}' not found", pipeline_name))?;
+            .ok_or_else(|| anyhow::anyhow!("thruline '{}' not found", pipeline_name))?;
 
         let (current_stage_name, parallel_hint) = match &self.state.status {
             RunStatus::Running => (pipeline.start.clone(), None),
@@ -344,7 +344,7 @@ impl Runtime {
         let pipeline_name = self.state.pipeline.clone();
         let pipeline = self
             .pipeline(&pipeline_name)
-            .ok_or_else(|| anyhow::anyhow!("pipeline '{}' not found", pipeline_name))?;
+            .ok_or_else(|| anyhow::anyhow!("thruline '{}' not found", pipeline_name))?;
 
         let routes: Vec<Route> = pipeline.routes.clone();
         let artifacts_snapshot = self.state.artifacts.clone();

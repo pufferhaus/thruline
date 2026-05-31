@@ -130,7 +130,7 @@ fn cmd_inspect(file: &Path) -> anyhow::Result<()> {
     let items = load_items(file)?;
     for item in &items {
         if let TlItem::Pipeline(p) = item {
-            println!("pipeline: {}", p.name);
+            println!("thruline: {}", p.name);
             if !p.inputs.is_empty() {
                 println!("  inputs:");
                 for input in &p.inputs {
@@ -274,9 +274,9 @@ pub async fn cmd_run(
                 if let TlItem::Pipeline(p) = i { Some(p.name.clone()) } else { None }
             }).collect();
             match pipelines.len() {
-                0 => anyhow::bail!("no pipeline defined in {}", file.display()),
+                0 => anyhow::bail!("no thruline defined in {}", file.display()),
                 1 => pipelines[0].clone(),
-                _ => anyhow::bail!("multiple pipelines — use --pipeline <name>"),
+                _ => anyhow::bail!("multiple thrulines — use --pipeline <name>"),
             }
         }
     };
