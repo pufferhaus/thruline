@@ -53,7 +53,7 @@ config {
 }
 ```
 
-Model resolution order for the **api driver**: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
+Model resolution order for the **anthropic driver**: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
 
 The stdio driver passes the runner spec as-is to the harness; model resolution is the harness's responsibility.
 
@@ -346,7 +346,7 @@ thruline feature_dev {
 thruline validate <file.line>                   # Parse and validate
 thruline inspect  <file.line>                   # Print pipeline graph and stages
 thruline run      <file.line>                   # Run with stdio driver (default)
-thruline run      <file.line> --driver api      # Run with direct API driver
+thruline run      <file.line> --driver anthropic # Run via Anthropic API directly
 thruline run      <file.line> --pipeline <name> # Select pipeline when multiple defined
 thruline runs                                   # List all runs
 thruline status   <run-id>                      # Show run state and artifacts
@@ -370,11 +370,13 @@ Thruline uses a **checkpoint-and-resume** model. Two drivers:
 
 State persists to `~/.thruline/runs/<run-id>/state.json`, enabling resume after process death.
 
-### api driver (standalone mode)
+### anthropic driver (standalone mode)
 
-`thruline run --driver api` calls the Anthropic Messages API directly. Requires `ANTHROPIC_API_KEY`.
+`thruline run --driver anthropic` calls the Anthropic Messages API directly. Requires `ANTHROPIC_API_KEY`.
 
 Model resolution: `runner.model` → `config.model` → `THRULINE_DEFAULT_MODEL` env var → error.
+
+> **Note:** `--driver api` is a deprecated alias for `--driver anthropic` and will continue to work.
 
 ---
 

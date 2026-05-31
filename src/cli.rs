@@ -355,7 +355,7 @@ pub async fn cmd_run(
                 return Err(e);
             }
         }
-        "api" => {
+        "anthropic" | "api" => {
             let driver = crate::driver::api::ApiDriver::from_env(config_model)?;
             crate::events::ThrulineEvent::PipelineStart {
                 run_id: run_id.clone(),
@@ -1042,7 +1042,7 @@ pub async fn cmd_run(
                 }
             }
         }
-        other => anyhow::bail!("unknown driver '{}' — use: stdio, api, mock, ollama, openai, bedrock, vertex", other),
+        other => anyhow::bail!("unknown driver '{}' — use: stdio, anthropic, mock, ollama, openai, bedrock, vertex", other),
     }
 
     Ok(())

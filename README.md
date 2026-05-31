@@ -136,7 +136,7 @@ stage report {
 
 ```bash
 # Standalone — calls Anthropic API directly
-ANTHROPIC_API_KEY=sk-... thruline run review.line --driver api \
+ANTHROPIC_API_KEY=sk-... thruline run review.line --driver anthropic \
   --input code=file:///path/to/code.rs
 
 # Harness mode — Claude Code drives the agents
@@ -166,7 +166,7 @@ Thruline has two modes:
 
 **Harness mode** (default) — `thruline run` emits a `stage_invoke` JSON event and exits. Your harness (Claude Code, a script, anything) calls the agent and feeds outputs back with `thruline resume`. State is checkpointed after every step to `~/.thruline/runs/`.
 
-**Standalone mode** (`--driver api`) — Calls the Anthropic Messages API directly. No harness needed.
+**Standalone mode** (`--driver anthropic`) — Calls the Anthropic Messages API directly. No harness needed.
 
 ---
 
@@ -265,14 +265,19 @@ thruline validate <file.line>              # Parse and validate
 thruline inspect  <file.line>              # Show routing graph and stages
 thruline run      <file.line>              # Run (stdio/harness mode)
 thruline run      <file.line> \
-  --driver api                             # Run standalone (Anthropic API)
-  --driver vertex                          # Run via Google Cloud Vertex AI
+  --driver anthropic                       # Anthropic API (ANTHROPIC_API_KEY)
+  --driver openai                          # OpenAI API   (OPENAI_API_KEY)
+  --driver ollama                          # Local models via Ollama
+  --driver bedrock                         # AWS Bedrock  (AWS_* env vars)
+  --driver vertex                          # GCP Vertex AI (VERTEX_* env vars)
+  --driver mock --mock-file responses.json # Scripted fixture — no API needed
   --pipeline <name>                        # Select thruline by name
   --input key=value                        # Set input artifact
   --input file=file:///abs/path
 thruline runs                              # List all runs
 thruline status   <run-id>                 # Show run state
 thruline serve [--port 7371]               # Local run inspection UI at http://localhost:7371
+thruline lsp                               # Start language server (LSP)
 thruline resume   <run-id> \
   --stage <name>                           # Feed agent output back
   --run <run-name>                         # Required for run-block stages
@@ -294,19 +299,19 @@ thruline resume   <run-id> \
 ```bash
 # Sentiment analysis
 ANTHROPIC_API_KEY=sk-... thruline run examples/sentiment/pipeline.line \
-  --driver api --input text="I love Rust!"
+  --driver anthropic --input text="I love Rust!"
 
 # Code review with retry loop
 ANTHROPIC_API_KEY=sk-... thruline run examples/code-review/review.line \
-  --driver api --input code=file:///path/to/file.rs
+  --driver anthropic --input code=file:///path/to/file.rs
 
 # PR triage
 ANTHROPIC_API_KEY=sk-... thruline run examples/pr_triage/triage.line \
-  --driver api --input description="Fix null pointer in auth module"
+  --driver anthropic --input description="Fix null pointer in auth module"
 
 # Multi-reviewer (parallel run blocks)
 ANTHROPIC_API_KEY=sk-... thruline run examples/multi_reviewer/review.line \
-  --driver api --input code=file:///path/to/file.rs
+  --driver anthropic --input code=file:///path/to/file.rs
 
 # Vertex AI (GCP)
 VERTEX_ACCESS_TOKEN=$(gcloud auth print-access-token) \
