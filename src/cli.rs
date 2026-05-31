@@ -7,7 +7,7 @@ use crate::runtime::state::{list_runs, RunState, RunStatus};
 use crate::validator;
 
 #[derive(Parser)]
-#[command(name = "thruline", about = "Deterministic multiagent pipeline runner")]
+#[command(name = "thruline", about = "Deterministic agent pipelines")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

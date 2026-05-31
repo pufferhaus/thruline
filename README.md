@@ -7,7 +7,7 @@
      ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
 ```
 
-**Agent workflows as code.**
+**Deterministic Agent Pipelines.**
 
 [![CI](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/pufferhaus/thruline)](https://github.com/pufferhaus/thruline/releases)
