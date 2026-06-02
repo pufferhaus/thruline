@@ -8,7 +8,7 @@
   "categories": ["Programming Languages"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pufferhaus/thruline"
+    "url": "https://github.com/dove-tools/thruline"
   },
   "contributes": {
     "languages": [{
