@@ -9,8 +9,8 @@
 
 **Deterministic Agent Pipelines.**
 
-[![CI](https://github.com/mull-sys/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/mull-sys/thruline/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/mull-sys/thruline)](https://github.com/mull-sys/thruline/releases)
+[![CI](https://github.com/dove-tools/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/dove-tools/thruline/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dove-tools/thruline)](https://github.com/dove-tools/thruline/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -21,11 +21,11 @@
 
 ```bash
 # Homebrew
-brew tap mull-sys/tap
+brew tap dove-tools/tap
 brew install thruline
 
 # From source (requires Rust 1.70+)
-cargo install --git https://github.com/mull-sys/thruline
+cargo install --git https://github.com/dove-tools/thruline
 ```
 
 ### Claude Code skills
@@ -33,7 +33,7 @@ cargo install --git https://github.com/mull-sys/thruline
 Two skills ship with thruline — install them as a Claude Code plugin:
 
 ```bash
-claude plugin install mull-sys/thruline
+claude plugin install dove-tools/thruline
 ```
 
 This gives you:
