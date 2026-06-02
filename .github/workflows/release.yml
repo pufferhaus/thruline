@@ -35,7 +35,7 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          URL="https://github.com/pufferhaus/thruline/archive/refs/tags/${VERSION}.tar.gz"
+          URL="https://github.com/mull-sys/thruline/archive/refs/tags/${VERSION}.tar.gz"
           # Retry up to 5 times — tarball may take a moment after release creation
           for i in $(seq 1 5); do
             SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
@@ -53,7 +53,7 @@ jobs:
           URL: ${{ steps.sha.outputs.url }}
         run: |
           # Fetch current formula and its blob SHA
-          RESPONSE=$(gh api repos/pufferhaus/homebrew-tap/contents/Formula/thruline.rb)
+          RESPONSE=$(gh api repos/mull-sys/homebrew-tap/contents/Formula/thruline.rb)
           BLOB_SHA=$(echo "$RESPONSE" | jq -r '.sha')
           CONTENT=$(echo "$RESPONSE" | jq -r '.content' | base64 -d)
 
@@ -63,7 +63,7 @@ jobs:
             | sed "s|sha256 \".*\"|sha256 \"$SHA256\"|")
 
           # Push updated formula
-          gh api repos/pufferhaus/homebrew-tap/contents/Formula/thruline.rb \
+          gh api repos/mull-sys/homebrew-tap/contents/Formula/thruline.rb \
             --method PUT \
             --field message="thruline: update to $VERSION" \
             --field content="$(echo "$NEW_CONTENT" | base64)" \
