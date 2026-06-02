@@ -9,8 +9,8 @@
 
 **Deterministic Agent Pipelines.**
 
-[![CI](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/pufferhaus/thruline/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/pufferhaus/thruline)](https://github.com/pufferhaus/thruline/releases)
+[![CI](https://github.com/mull-sys/thruline/actions/workflows/ci.yml/badge.svg)](https://github.com/mull-sys/thruline/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pufferhaus/thruline)](https://github.com/mull-sys/thruline/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -21,11 +21,11 @@
 
 ```bash
 # Homebrew
-brew tap pufferhaus/tap
+brew tap mull-sys/tap
 brew install thruline
 
 # From source (requires Rust 1.70+)
-cargo install --git https://github.com/pufferhaus/thruline
+cargo install --git https://github.com/mull-sys/thruline
 ```
 
 ### Claude Code skills
