@@ -5,7 +5,7 @@
   "description": "Skills for running and creating thruline workflows from Claude Code.",
   "author": {
     "name": "imi",
-    "email": "pufferhaus@fugu.estate"
+    "email": "hello@dove.tools"
   },
   "skills": [
     "./skill/"
