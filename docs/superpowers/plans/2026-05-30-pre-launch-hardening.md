@@ -1109,8 +1109,8 @@ git push origin v0.1.1
 - [ ] **Update Homebrew formula to v0.1.1**
 
 ```bash
-SHA=$(curl -sL https://github.com/pufferhaus/thruline/archive/refs/tags/v0.1.1.tar.gz | shasum -a 256 | cut -d' ' -f1)
-# Edit pufferhaus/homebrew-tap Formula/thruline.rb:
-#   url  → https://github.com/pufferhaus/thruline/archive/refs/tags/v0.1.1.tar.gz
+SHA=$(curl -sL https://github.com/dove-tools/thruline/archive/refs/tags/v0.1.1.tar.gz | shasum -a 256 | cut -d' ' -f1)
+# Edit dove-tools/homebrew-tap Formula/thruline.rb:
+#   url  → https://github.com/dove-tools/thruline/archive/refs/tags/v0.1.1.tar.gz
 #   sha256 → $SHA
 ```

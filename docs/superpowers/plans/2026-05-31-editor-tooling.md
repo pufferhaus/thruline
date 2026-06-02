@@ -101,12 +101,12 @@
   "displayName": "Thruline",
   "description": "Syntax highlighting for .line workflow files",
   "version": "0.1.1",
-  "publisher": "pufferhaus",
+  "publisher": "dove-tools",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pufferhaus/thruline"
+    "url": "https://github.com/dove-tools/thruline"
   },
   "contributes": {
     "languages": [{
@@ -154,7 +154,7 @@ In `README.md`, add to the Install section or create an `## Editor Support` sect
 
 ### VS Code
 
-Install the [Thruline extension](https://marketplace.visualstudio.com/items?itemName=pufferhaus.thruline) for `.line` syntax highlighting, or manually:
+Install the [Thruline extension](https://marketplace.visualstudio.com/items?itemName=dove-tools.thruline) for `.line` syntax highlighting, or manually:
 
 1. Copy `editors/vscode/` into `~/.vscode/extensions/thruline-0.1.1/`
 2. Reload VS Code

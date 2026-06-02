@@ -3,7 +3,7 @@
   "displayName": "Thruline",
   "description": "Syntax highlighting for .line workflow files",
   "version": "0.1.2",
-  "publisher": "pufferhaus",
+  "publisher": "dove-tools",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages"],
   "repository": {
