@@ -137,7 +137,7 @@ Expected: all pass.
 Add to `Cargo.toml`:
 ```toml
 [dependencies]
-thruline = { git = "https://github.com/pufferhaus/thruline" }
+thruline = { git = "https://github.com/dove-tools/thruline" }
 ```
 
 Basic usage:
