@@ -87,8 +87,68 @@ pub fn build_graph(
     Ok(Graph { stages, edges, start: pipeline.start.clone() })
 }
 
-pub fn render_graph(_graph: &Graph) -> Vec<String> {
-    todo!()
+pub fn render_graph(graph: &Graph) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut rendered: std::collections::HashSet<String> = std::collections::HashSet::new();
+    render_node(&graph.start, graph, &mut lines, &mut rendered, 0);
+    lines
+}
+
+fn render_node(
+    stage: &str,
+    graph: &Graph,
+    lines: &mut Vec<String>,
+    rendered: &mut std::collections::HashSet<String>,
+    depth: usize,
+) {
+    let indent = "  ".repeat(depth);
+
+    if rendered.contains(stage) {
+        lines.push(format!("{}[{}] (already rendered above)", indent, stage));
+        return;
+    }
+    rendered.insert(stage.to_string());
+
+    lines.push(format!("{}[{}]", indent, stage));
+
+    let outgoing: Vec<&Edge> = graph.edges.iter()
+        .filter(|e| e.from == stage)
+        .collect();
+
+    if outgoing.is_empty() { return; }
+
+    if outgoing.len() == 1 {
+        let e = outgoing[0];
+        if e.is_back_edge {
+            let max_str = e.max_visits.map(|n| format!(" [max:{}]", n)).unwrap_or_default();
+            lines.push(format!("{}  │", indent));
+            lines.push(format!("{}  └─→ [{}] (loop ↑){}", indent, e.to, max_str));
+        } else {
+            if !e.label.is_empty() {
+                let max_str = e.max_visits.map(|n| format!(" [max:{}]", n)).unwrap_or_default();
+                lines.push(format!("{}  │ {}{}", indent, e.label, max_str));
+            } else {
+                lines.push(format!("{}  │", indent));
+            }
+            render_node(&e.to, graph, lines, rendered, depth);
+        }
+    } else {
+        // Branch: multiple outgoing edges
+        lines.push(format!("{}  │", indent));
+        lines.push(format!("{}  ├── branches ──", indent));
+        for (i, e) in outgoing.iter().enumerate() {
+            let connector = if i + 1 == outgoing.len() { "└" } else { "├" };
+            if e.is_back_edge {
+                let max_str = e.max_visits.map(|n| format!(" [max:{}]", n)).unwrap_or_default();
+                let label = if e.label.is_empty() { String::new() } else { format!(" ({})", e.label) };
+                lines.push(format!("{}  {}─→ [{}] (loop ↑){}{}", indent, connector, e.to, label, max_str));
+            } else {
+                let label = if e.label.is_empty() { String::new() } else { format!(" ({})", e.label) };
+                lines.push(format!("{}  {}─ {}", indent, connector, label.trim()));
+                render_node(&e.to, graph, lines, rendered, depth + 2);
+            }
+        }
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -225,5 +285,66 @@ mod tests {
     fn test_build_graph_error_no_pipeline() {
         let items = vec![TlItem::Stage(simple_stage("a"))];
         assert!(build_graph(&items, None).is_err());
+    }
+
+    #[test]
+    fn test_render_single_stage() {
+        let graph = Graph {
+            start: "a".to_string(),
+            stages: vec!["a".to_string()],
+            edges: vec![],
+        };
+        let lines = render_graph(&graph);
+        let joined = lines.join("\n");
+        assert!(joined.contains("[a]"), "got: {}", joined);
+    }
+
+    #[test]
+    fn test_render_linear_two_stages() {
+        let graph = Graph {
+            start: "a".to_string(),
+            stages: vec!["a".to_string(), "b".to_string()],
+            edges: vec![Edge { from: "a".to_string(), to: "b".to_string(), label: String::new(), max_visits: None, is_back_edge: false }],
+        };
+        let lines = render_graph(&graph);
+        let joined = lines.join("\n");
+        assert!(joined.contains("[a]"), "got: {}", joined);
+        assert!(joined.contains("[b]"), "got: {}", joined);
+        // b appears after a
+        let a_pos = joined.find("[a]").unwrap();
+        let b_pos = joined.find("[b]").unwrap();
+        assert!(b_pos > a_pos, "b should appear below a");
+    }
+
+    #[test]
+    fn test_render_loop_shows_loop_marker() {
+        let graph = Graph {
+            start: "review".to_string(),
+            stages: vec!["review".to_string(), "revise".to_string()],
+            edges: vec![
+                Edge { from: "review".to_string(), to: "revise".to_string(), label: r#"verdict != "approved""#.to_string(), max_visits: Some(4), is_back_edge: false },
+                Edge { from: "revise".to_string(), to: "review".to_string(), label: String::new(), max_visits: None, is_back_edge: true },
+            ],
+        };
+        let lines = render_graph(&graph);
+        let joined = lines.join("\n");
+        assert!(joined.contains("loop"), "expected loop marker, got: {}", joined);
+        assert!(joined.contains("[max:4]"), "expected max:4, got: {}", joined);
+    }
+
+    #[test]
+    fn test_render_branch_includes_both_targets() {
+        let graph = Graph {
+            start: "classify".to_string(),
+            stages: vec!["classify".to_string(), "approve".to_string(), "reject".to_string()],
+            edges: vec![
+                Edge { from: "classify".to_string(), to: "approve".to_string(), label: r#"verdict == "ok""#.to_string(), max_visits: None, is_back_edge: false },
+                Edge { from: "classify".to_string(), to: "reject".to_string(), label: r#"verdict != "ok""#.to_string(), max_visits: None, is_back_edge: false },
+            ],
+        };
+        let lines = render_graph(&graph);
+        let joined = lines.join("\n");
+        assert!(joined.contains("[approve]"), "got: {}", joined);
+        assert!(joined.contains("[reject]"), "got: {}", joined);
     }
 }
