@@ -353,6 +353,8 @@ thruline status   <run-id>                      # Show run state and artifacts
 thruline resume   <run-id> --stage <name> \
                   --artifact key=value \
                   --artifact path=file:///abs/path
+thruline graph    <file.line>                   # Render pipeline as ASCII flowchart
+thruline -i                                     # Launch interactive TUI
 ```
 
 ---

@@ -341,3 +341,22 @@ fn test_mock_driver_runs_full_pipeline() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains(r#""event":"pipeline_done""#), "no pipeline_done: {}", stdout);
 }
+
+#[test]
+fn test_graph_renders_flowchart() {
+    let dir = tempfile::tempdir().unwrap();
+    let tl = write_tl(dir.path(), "flow.line", BASIC_TL);
+
+    let out = thruline().args(["graph", tl.to_str().unwrap()]).output().unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // BASIC_TL has stages a and b
+    assert!(stdout.contains("[a]"), "expected [a] in output: {}", stdout);
+    assert!(stdout.contains("[b]"), "expected [b] in output: {}", stdout);
+}
+
+#[test]
+fn test_graph_missing_file_errors() {
+    let out = thruline().args(["graph", "/nonexistent/pipeline.line"]).output().unwrap();
+    assert!(!out.status.success());
+}

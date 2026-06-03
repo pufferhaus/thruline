@@ -6,6 +6,7 @@ mod lsp;
 mod parser;
 mod runtime;
 mod serve;
+mod tui;
 mod validator;
 
 #[tokio::main]

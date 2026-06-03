@@ -1,6 +1,6 @@
 [package]
 name = "thruline"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "Deterministic agent pipelines"
 license = "MIT"
@@ -31,6 +31,9 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 reqwest = { version = "0.12", features = ["json"] }
 async-trait = "0.1"
+ratatui = { version = "0.29", features = ["crossterm"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures = "0.3"
 tower-lsp = "0.20"
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
