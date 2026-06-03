@@ -282,6 +282,9 @@ thruline resume   <run-id> \
   --stage <name>                           # Feed agent output back
   --run <run-name>                         # Required for run-block stages
   --artifact key=value
+thruline graph    <file.line>              # Render pipeline as ASCII flowchart
+thruline -i                               # Launch interactive TUI
+thruline --interactive                    # Launch interactive TUI (long form)
 ```
 
 ---
