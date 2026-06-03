@@ -18,12 +18,25 @@ use tokio::sync::mpsc;
 use app::{App, ModalState, PaneFocus};
 use crate::ast::TlItem;
 
+struct TerminalGuard {
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = self.terminal.show_cursor();
+    }
+}
+
 pub async fn cmd_tui() -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(out);
-    let mut terminal = Terminal::new(backend)?;
+    let terminal = Terminal::new(backend)?;
+    let mut guard = TerminalGuard { terminal };
 
     let (tx, rx) = mpsc::channel::<(String, String)>(256);
     let mut app = App::new(rx)?;
@@ -33,7 +46,7 @@ pub async fn cmd_tui() -> anyhow::Result<()> {
     let mut should_quit = false;
 
     while !should_quit {
-        terminal.draw(|f| ui::render(f, &app))?;
+        guard.terminal.draw(|f| ui::render(f, &app))?;
 
         tokio::select! {
             _ = tick.tick() => {
@@ -47,9 +60,7 @@ pub async fn cmd_tui() -> anyhow::Result<()> {
         }
     }
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
-    terminal.show_cursor()?;
+    // Drop of guard runs cleanup automatically
     Ok(())
 }
 
