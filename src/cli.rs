@@ -10,8 +10,11 @@ use crate::validator;
 #[derive(Parser)]
 #[command(name = "thruline", about = "Deterministic agent pipelines")]
 pub struct Cli {
+    /// Launch interactive TUI
+    #[arg(short = 'i', long = "interactive")]
+    pub interactive: bool,
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -58,17 +61,28 @@ pub enum Commands {
         #[arg(long = "artifact")]
         artifacts: Vec<String>,
     },
+    /// Render the pipeline flow as ASCII art
+    Graph {
+        file: PathBuf,
+        /// Select pipeline when file declares multiple
+        #[arg(long)]
+        pipeline: Option<String>,
+    },
 }
 
 pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    match cli.command {
+    if cli.interactive {
+        return crate::tui::cmd_tui().await;
+    }
+    match cli.command.ok_or_else(|| anyhow::anyhow!("no command given — use --help"))? {
         Commands::Validate { file }  => cmd_validate(&file),
         Commands::Inspect  { file }  => cmd_inspect(&file),
         Commands::Runs               => cmd_runs(),
         Commands::Status { run_id }  => cmd_status(&run_id),
         Commands::Serve { port }     => cmd_serve(port).await,
         Commands::Lsp                => cmd_lsp().await,
+        Commands::Graph { file, pipeline } => cmd_graph(&file, pipeline.as_deref()),
         Commands::Run { file, pipeline, driver, inputs, mock_file } => cmd_run(&file, pipeline.as_deref(), &driver, &inputs, mock_file.as_deref()).await,
         Commands::Resume { run_id, stage, run, artifacts } => cmd_resume(&run_id, &stage, run.as_deref(), &artifacts).await,
     }
@@ -1114,4 +1128,13 @@ pub async fn cmd_serve(port: u16) -> anyhow::Result<()> {
 
 pub async fn cmd_lsp() -> anyhow::Result<()> {
     crate::lsp::run_lsp().await
+}
+
+fn cmd_graph(file: &Path, pipeline: Option<&str>) -> anyhow::Result<()> {
+    let items = load_items(file)?;
+    let graph = crate::tui::visualizer::build_graph(&items, pipeline)?;
+    for line in crate::tui::visualizer::render_graph(&graph) {
+        println!("{}", line);
+    }
+    Ok(())
 }
